@@ -1,0 +1,10 @@
+{
+    "clients": [
+        {
+            "id": 1,
+            "fio": "Тестовый Клиент",
+            "email": "test@example.com",
+            "password": "12345"
+        }
+    ]
+}
