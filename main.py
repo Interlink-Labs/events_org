@@ -1,149 +1,75 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
-import events_db
+import services_db
 
+app = FastAPI()
 
-# ==================== SCHEMAS ====================
-class VenuePackage(BaseModel):
+# ==================== PYDANTIC MODELS ====================
+class VenueCreate(BaseModel):
     name: str
     address: str
     capacity: int
+
+class ServiceCreate(BaseModel):
+    venue_id: int
+    name: str
     description: Optional[str] = None
+    price: float = 0.0
+    contact_phone: Optional[str] = "Не указан"
 
-
-class EventPackage(BaseModel):
-    title: str
-    date: str  # "YYYY-MM-DDTHH:MM:SS"
-    location: str
-    participants_count: int
+class ServiceUpdate(BaseModel):
+    name: str
     description: Optional[str] = None
-    venue_id: Optional[int] = None
+    price: float
+    contact_phone: str
 
+class PhoneUpdate(BaseModel):
+    contact_phone: str
 
-class EventUpdatePackage(BaseModel):
-    title: Optional[str] = None
-    date: Optional[str] = None
-    location: Optional[str] = None
-    participants_count: Optional[int] = None
-    description: Optional[str] = None
-    venue_id: Optional[int] = None
-
-
-app = FastAPI()
-
-
-# ==================== VENUES ====================
+# ==================== ЛОКАЦИИ ====================
 @app.post("/api/v1/venues/create")
-def create_venue(v: VenuePackage):
-    venue_id = events_db.create_venue(v.name, v.address, v.capacity, v.description)
-    return {"ok": True, "venue_id": venue_id}
-
+def api_create_venue(v: VenueCreate):
+    """Создает локацию и автоматически добавляет базовые услуги"""
+    venue_id = services_db.create_venue(v.name, v.address, v.capacity)
+    return {"ok": True, "venue_id": venue_id, "msg": "Локация создана, базовые услуги добавлены"}
 
 @app.get("/api/v1/venues")
-def get_venues():
-    return events_db.list_venues()
+def api_get_venues():
+    return services_db.get_venues()
 
+# ==================== УСЛУГИ (CRUD ДЛЯ МЕНЕДЖЕРА) ====================
 
-@app.get("/api/v1/venues/{venue_id}")
-def get_venue(venue_id: int):
-    v = events_db.get_venue(venue_id)
-    return v if v else {"error": "Площадка не найдена"}
+@app.get("/api/v1/manager/services")
+def get_all_services(venue_id: Optional[int] = None):
+    """Получить все услуги или услуги конкретной локации"""
+    return services_db.get_services(venue_id)
 
-
-# ==================== EVENTS (CRUD) ====================
-@app.post("/api/v1/events/create")
-def create_event(e: EventPackage):
-    event_id = events_db.create_event(
-        title=e.title,
-        date=e.date,
-        location=e.location,
-        participants_count=e.participants_count,
-        description=e.description,
-        venue_id=e.venue_id
+@app.post("/api/v1/manager/services/create")
+def create_service(s: ServiceCreate):
+    if not services_db.get_venues(): # Просто проверка, что БД жива
+        pass
+    service_id = services_db.create_service(
+        s.venue_id, s.name, s.description, s.price, s.contact_phone
     )
+    return {"ok": True, "service_id": service_id}
 
-    # Автоподбор + автобронь, если площадка не задана
-    if e.venue_id is None:
-        suitable = events_db.find_suitable_venues(e.participants_count, e.date)
-        if not suitable:
-            events_db.delete_event(event_id)
-            return {"ok": False, "error": "Нет свободных подходящих площадок на эту дату"}
+@app.post("/api/v1/manager/services/{service_id}/update")
+def update_service(service_id: int, s: ServiceUpdate):
+    if services_db.update_service(service_id, s.name, s.description, s.price, s.contact_phone):
+        return {"ok": True, "msg": "Услуга обновлена"}
+    return {"ok": False, "msg": "Услуга не найдена"}
 
-        venue = suitable[0]
-        result = events_db.book_venue(event_id, venue["id"])
-        if not result["ok"]:
-            events_db.delete_event(event_id)
-            return {"ok": False, "error": result["error"]}
+@app.post("/api/v1/manager/services/{service_id}/delete")
+def delete_service(service_id: int):
+    if services_db.delete_service(service_id):
+        return {"ok": True, "msg": "Услуга удалена"}
+    return {"ok": False, "msg": "Услуга не найдена"}
 
-        return {
-            "ok": True,
-            "event_id": event_id,
-            "booked_venue": venue
-        }
-
-    # Если площадка задана — бронируем её
-    result = events_db.book_venue(event_id, e.venue_id)
-    if not result["ok"]:
-        events_db.delete_event(event_id)
-        return {"ok": False, "error": result["error"]}
-
-    return {"ok": True, "event_id": event_id, "booking_id": result["booking_id"]}
-
-
-@app.get("/api/v1/events")
-def get_events():
-    return events_db.list_events()
-
-
-@app.get("/api/v1/events/{event_id}")
-def get_event(event_id: int):
-    e = events_db.get_event(event_id)
-    return e if e else {"error": "Мероприятие не найдено"}
-
-
-@app.post("/api/v1/events/{event_id}/update")
-def update_event(event_id: int, e: EventUpdatePackage):
-    ok = events_db.update_event(event_id, **e.model_dump(exclude_unset=True))
-    return {"ok": ok, "msg": "Обновлено" if ok else "Мероприятие не найдено"}
-
-
-@app.post("/api/v1/events/{event_id}/delete")
-def delete_event(event_id: int):
-    ok = events_db.delete_event(event_id)
-    return {"ok": ok, "msg": "Удалено" if ok else "Мероприятие не найдено"}
-
-
-# ==================== ПОДБОР ПЛОЩАДКИ ====================
-@app.get("/api/v1/venues/suitable")
-def suitable_venues(participants: int, event_date: str):
-    return events_db.find_suitable_venues(participants, event_date)
-
-
-# ==================== БРОНИРОВАНИЕ ====================
-@app.post("/api/v1/events/{event_id}/book")
-def book_event(event_id: int, venue_id: int):
-    return events_db.book_venue(event_id, venue_id)
-
-
-@app.get("/api/v1/events/{event_id}/booking")
-def get_booking(event_id: int):
-    b = events_db.get_booking(event_id)
-    return b if b else {"error": "Брони нет"}
-import uvicorn
-from fastapi import FastAPI
-
-from clients.Testun import client_bp
-
-app = FastAPI()
-
-app.include_router(client_bp)
-
-
-@app.get('/')
-def root():
-    return {"message": "API работает. Открой /docs"}
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+# ==================== КОНТАКТЫ ====================
+@app.post("/api/v1/manager/services/{service_id}/phone")
+def set_contact_phone(service_id: int, p: PhoneUpdate):
+    """14) Привязка к локации контактного номера телефона ответственного"""
+    if services_db.update_contact_phone(service_id, p.contact_phone):
+        return {"ok": True, "msg": "Номер телефона обновлен"}
+    return {"ok": False, "msg": "Услуга не найдена"}
