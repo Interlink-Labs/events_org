@@ -1,75 +1,110 @@
+from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import Optional
-import services_db
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# ==================== PYDANTIC MODELS ====================
-class VenueCreate(BaseModel):
-    name: str
-    address: str
-    capacity: int
+# ==========================================
+# ИМПОРТЫ МОДУЛЕЙ
+# ==========================================
+# Мы импортируем приложения или роутеры из папок модулей.
+# Если модуль еще не готов (или упал), сервер все равно запустится.
 
-class ServiceCreate(BaseModel):
-    venue_id: int
-    name: str
-    description: Optional[str] = None
-    price: float = 0.0
-    contact_phone: Optional[str] = "Не указан"
+try:
+    from clients.main import app as clients_app
+except ImportError:
+    logger.warning("⚠️ Модуль 'clients' не найден или не содержит 'app'")
+    clients_app = None
 
-class ServiceUpdate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    price: float
-    contact_phone: str
+try:
+    from modiule_events.main import app as events_app
+except ImportError:
+    logger.warning("⚠️ Модуль 'modiule_events' не найден или не содержит 'app'")
+    events_app = None
 
-class PhoneUpdate(BaseModel):
-    contact_phone: str
+try:
+    from module_Estimate.main import app as estimate_app
+except ImportError:
+    logger.warning("⚠️ Модуль 'module_Estimate' не найден или не содержит 'app'")
+    estimate_app = None
 
-# ==================== ЛОКАЦИИ ====================
-@app.post("/api/v1/venues/create")
-def api_create_venue(v: VenueCreate):
-    """Создает локацию и автоматически добавляет базовые услуги"""
-    venue_id = services_db.create_venue(v.name, v.address, v.capacity)
-    return {"ok": True, "venue_id": venue_id, "msg": "Локация создана, базовые услуги добавлены"}
+try:
+    from module_services.main import app as services_app
+except ImportError:
+    logger.warning("⚠️ Модуль 'module_services' не найден или не содержит 'app'")
+    services_app = None
 
-@app.get("/api/v1/venues")
-def api_get_venues():
-    return services_db.get_venues()
 
-# ==================== УСЛУГИ (CRUD ДЛЯ МЕНЕДЖЕРА) ====================
+# ==========================================
+# ОСНОВНОЕ ПРИЛОЖЕНИЕ
+# ==========================================
 
-@app.get("/api/v1/manager/services")
-def get_all_services(venue_id: Optional[int] = None):
-    """Получить все услуги или услуги конкретной локации"""
-    return services_db.get_services(venue_id)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 Запуск главного приложения...")
+    yield
+    logger.info("🛑 Остановка приложения...")
 
-@app.post("/api/v1/manager/services/create")
-def create_service(s: ServiceCreate):
-    if not services_db.get_venues(): # Просто проверка, что БД жива
-        pass
-    service_id = services_db.create_service(
-        s.venue_id, s.name, s.description, s.price, s.contact_phone
-    )
-    return {"ok": True, "service_id": service_id}
 
-@app.post("/api/v1/manager/services/{service_id}/update")
-def update_service(service_id: int, s: ServiceUpdate):
-    if services_db.update_service(service_id, s.name, s.description, s.price, s.contact_phone):
-        return {"ok": True, "msg": "Услуга обновлена"}
-    return {"ok": False, "msg": "Услуга не найдена"}
+main_app = FastAPI(
+    title="Главный API Проекта",
+    version="1.0.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
+)
 
-@app.post("/api/v1/manager/services/{service_id}/delete")
-def delete_service(service_id: int):
-    if services_db.delete_service(service_id):
-        return {"ok": True, "msg": "Услуга удалена"}
-    return {"ok": False, "msg": "Услуга не найдена"}
+main_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # В продакшене заменить на конкретные домены
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# ==================== КОНТАКТЫ ====================
-@app.post("/api/v1/manager/services/{service_id}/phone")
-def set_contact_phone(service_id: int, p: PhoneUpdate):
-    """14) Привязка к локации контактного номера телефона ответственного"""
-    if services_db.update_contact_phone(service_id, p.contact_phone):
-        return {"ok": True, "msg": "Номер телефона обновлен"}
-    return {"ok": False, "msg": "Услуга не найдена"}
+# ==========================================
+# МОНТИРОВАНИЕ МОДУЛЕЙ
+# ==========================================
+# Каждому модулю выделяется свой префикс (URL).
+# Например: /api/clients/..., /api/events/...
+
+if clients_app:
+    main_app.mount("/api/clients", clients_app)
+    logger.info("✅ Подключен модуль: clients")
+
+if events_app:
+    main_app.mount("/api/events", events_app)
+    logger.info("✅ Подключен модуль: modiule_events")
+
+if estimate_app:
+    main_app.mount("/api/estimate", estimate_app)
+    logger.info("✅ Подключен модуль: module_Estimate")
+
+if services_app:
+    main_app.mount("/api/services", services_app)
+    logger.info("✅ Подключен модуль: module_services")
+
+
+# ==========================================
+# БАЗОВЫЙ ЭНДПОИНТ
+# ==========================================
+
+@main_app.get("/health", tags=["System"])
+async def health_check():
+    """Проверка работоспособности главного сервиса."""
+    return {
+        "status": "ok",
+        "modules_loaded": {
+            "clients": clients_app is not None,
+            "events": events_app is not None,
+            "estimate": estimate_app is not None,
+            "services": services_app is not None,
+        }
+    }
+
+# Для запуска через uvicorn app.main:app, если нужно
+app = main_app
