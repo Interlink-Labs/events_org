@@ -119,3 +119,13 @@ def set_contact_phone(service_id: int, p: PhoneUpdate):
 @app.get("/")
 def root():
     return {"message": "API работает. Открой /docs"}
+# ... (весь предыдущий код с VenueCreate, сервисами и billing)
+
+@app.get("/")
+def root():
+    return {"message": "API работает. Открой /docs"}
+
+# ==================== ЗАПУСК СЕРВЕРА ====================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
