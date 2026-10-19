@@ -1,6 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from pydantic import BaseModel
 import clients
+from hashlib import sha256
+from random import randint
+
 
 
 class Package(BaseModel):
@@ -50,3 +53,28 @@ def delete_client(username: str):
         return 'Пользователь удален'
     else:
         return 'Пользователь не найден'
+
+@app.get("/api/v1/set-cookie")
+def set_cookie(username, response: Response):
+    value = str(randint(1, 1000000000))
+    access_token = sha256(value.encode('utf-8')).hexdigest()
+    response.set_cookie(
+        key="access_token", 
+        value=value, 
+        httponly=True,  # Защита: JavaScript на клиенте не сможет прочитать эту куку
+        max_age=900,    # Время жизни куки в секундах (1 час)
+        samesite="lax"  # Защита от CSRF-атак
+    )
+
+    value = str(randint(1, 1000000000))
+    refresh_token = sha256(value.encode('utf-8')).hexdigest()
+    response.set_cookie(
+        key="refresh_token", 
+        value=value, 
+        httponly=True,  # Защита: JavaScript на клиенте не сможет прочитать эту куку
+        max_age=900,    # Время жизни куки в секундах (1 час)
+        samesite="lax"  # Защита от CSRF-атак
+    )
+
+    clients.write_cookie(access_token, refresh_token, username)
+    return {"message": "Куки успешно установлены!"}
