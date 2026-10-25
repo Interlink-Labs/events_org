@@ -3,7 +3,11 @@ event_to_estimate = {}
 items_db = {}
 expenses_db = {}
 payments_db = {}
-_counters = {"estimate": 0, "item": 0, "expense": 0, "payment": 0}
+
+# История изменений статусов платежей
+payment_logs_db = {}
+
+_counters = {"estimate": 0, "item": 0, "expense": 0, "payment": 0, "log": 0}
 
 def next_id(kind: str) -> int:
     _counters[kind] += 1
