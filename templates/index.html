@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interlink Labs · Eventique — организация мероприятий</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+
+  <div class="dev-banner" id="dev-banner">
+    <span class="dev-dot"></span>
+    Сервис находится в разработке — некоторые функции могут быть недоступны
+  </div>
+
+  <nav class="navbar" id="navbar">
+    <div class="navbar-inner">
+      <a href="#" class="brand" onclick="app.showScreen('home');return false;">
+        <span class="brand-mark">IL</span>
+        <span class="brand-text">
+          <span class="brand-name">Interlink Labs</span>
+          <span class="brand-sub">· Eventique</span>
+        </span>
+      </a>
+
+      <div class="nav-links" id="nav-links">
+        <a href="#" class="nav-link" onclick="app.showScreen('home');return false;">Главная</a>
+        <a href="#" class="nav-link" onclick="app.showScreen('locations');return false;">Локации</a>
+        <a href="#" class="nav-link" onclick="app.showScreen('create-booking');return false;">Создать заявку</a>
+        <a href="#" class="nav-link" onclick="app.showScreen('bookings');return false;">Мои заявки</a>
+      </div>
+
+      <div class="nav-actions" id="nav-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-login" onclick="app.showScreen('login')">Войти</button>
+        <button class="btn btn-gold btn-sm" id="btn-register" onclick="app.showScreen('register')">Регистрация</button>
+        <div class="user-menu hidden" id="user-menu">
+          <button class="user-chip" onclick="app.showScreen('profile')">
+            <span class="avatar" id="user-avatar">U</span>
+            <span id="user-name-short">Профиль</span>
+          </button>
+          <div class="user-dropdown">
+            <button onclick="app.showScreen('profile')">Мой профиль</button>
+            <button onclick="app.showScreen('bookings')">Мои заявки</button>
+            <button onclick="app.showScreen('estimate')">Смета и оплата</button>
+            <hr>
+            <button class="text-danger" onclick="app.logout()">Выйти</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="screens" id="screens">
+    <!-- ==================== HOME ==================== -->
+    <section class="screen active" id="screen-home">
+      <div class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content animate-on-scroll">
+          <span class="eyebrow">✦ Организация мероприятий премиум-класса</span>
+          <h1 class="hero-title">События, которые<br><span class="text-gold">запоминаются</span> навсегда</h1>
+          <p class="hero-subtitle">Eventique — сервис сети Interlink Labs для планирования свадеб, корпоративов и частных праздников. Подбор локации, оформление, кейтеринг и полное сопровождение в одном месте.</p>
+          <div class="hero-actions">
+            <button class="btn btn-gold btn-lg" onclick="app.showScreen('create-booking')">Создать заявку</button>
+            <button class="btn btn-outline-light btn-lg" onclick="app.showScreen('locations')">Смотреть локации</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="marquee-wrapper">
+        <div class="marquee">
+          <span>✦ Премиальные локации</span><span>✦ Индивидуальный подход</span><span>✦ Лучшие тамады и диджеи</span><span>✦ Профессиональный кейтеринг</span><span>✦ Оформление под ключ</span><span>✦ Премиальные локации</span><span>✦ Индивидуальный подход</span><span>✦ Лучшие тамады и диджеи</span><span>✦ Профессиональный кейтеринг</span><span>✦ Оформление под ключ</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head animate-on-scroll"><span class="eyebrow">Почему Eventique</span><h2 class="section-title">Полный цикл организации</h2></div>
+        <div class="features-grid">
+          <div class="feature-card animate-on-scroll"><div class="feature-icon">📍</div><h3>Подбор локации</h3><p>Закрытые залы, лофты, шатры и открытые площадки под любое количество гостей.</p></div>
+          <div class="feature-card animate-on-scroll" style="transition-delay: 0.1s;"><div class="feature-icon">💐</div><h3>Оформление</h3><p>Цветочная декорация, световое оформление, фотозоны и тематические зоны.</p></div>
+          <div class="feature-card animate-on-scroll" style="transition-delay: 0.2s;"><div class="feature-icon">🍽️</div><h3>Кейтеринг</h3><p>Фуршеты, банкеты, бар-станции и авторские меню от наших партнёров.</p></div>
+          <div class="feature-card animate-on-scroll" style="transition-delay: 0.3s;"><div class="feature-icon">📋</div><h3>Сопровождение</h3><p>Личный менеджер на всём этапе: от подачи заявки до завершения мероприятия.</p></div>
+        </div>
+      </div>
+
+      <div class="section section-dark">
+        <div class="section-head animate-on-scroll"><span class="eyebrow">Процесс</span><h2 class="section-title" style="color: var(--white)">Как мы работаем</h2></div>
+        <div class="steps-grid">
+          <div class="step-card animate-on-scroll"><div class="step-num">01</div><h3>Оставляете заявку</h3><p>Выбираете тип мероприятия и удобную дату на нашем сайте.</p></div>
+          <div class="step-card animate-on-scroll" style="transition-delay: 0.1s;"><div class="step-num">02</div><h3>Выбираете локацию</h3><p>Подбираете зал или площадку из доступных вариантов.</p></div>
+          <div class="step-card animate-on-scroll" style="transition-delay: 0.2s;"><div class="step-num">03</div><h3>Добавляете услуги</h3><p>Тамада, диджей, шары, аниматоры и другие опции в пару кликов.</p></div>
+          <div class="step-card animate-on-scroll" style="transition-delay: 0.3s;"><div class="step-num">04</div><h3>Отдыхаете на празднике</h3><p>Мы берём на себя всю организацию и сопровождение.</p></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head animate-on-scroll"><span class="eyebrow">Отзывы</span><h2 class="section-title">Нам доверяют</h2></div>
+        <div class="reviews-grid">
+          <div class="review-card animate-on-scroll"><div class="stars">★★★★★</div><p>«Свадьба прошла идеально! Локация "Гранд" превзошла все ожидания, а тамада Сергей зажёг всех гостей.»</p><div class="author"><div class="author-avatar">АС</div><div><strong>Анна С.</strong><br><small>Свадьба на 120 человек</small></div></div></div>
+          <div class="review-card animate-on-scroll" style="transition-delay: 0.1s;"><div class="stars">★★★★★</div><p>«Организовали корпоратив в лофте "Кирпич". Диджей супер, кейтеринг на высоте. Отдельное спасибо менеджеру!»</p><div class="author"><div class="author-avatar">ИМ</div><div><strong>Игорь М.</strong><br><small>Корпоратив на 60 человек</small></div></div></div>
+          <div class="review-card animate-on-scroll" style="transition-delay: 0.2s;"><div class="stars">★★★★★</div><p>«Заказывали детский день рождения. Аниматоры от бога, шары шикарные. Ребёнок в восторге!»</p><div class="author"><div class="author-avatar">ЕВ</div><div><strong>Елена В.</strong><br><small>День рождения</small></div></div></div>
+        </div>
+      </div>
+
+      <div class="cta-section animate-on-scroll">
+        <div class="cta-bg"></div>
+        <div class="cta-content"><h2>Готовы создать событие мечты?</h2><p>Оставьте заявку прямо сейчас, и мы свяжемся с вами для обсуждения деталей.</p><button class="btn btn-gold btn-lg pulse-btn" onclick="app.showScreen('create-booking')">Начать планирование</button></div>
+      </div>
+    </section>
+
+    <!-- ==================== LOGIN ==================== -->
+    <section class="screen hidden" id="screen-login">
+      <div class="auth-container">
+        <div class="auth-card">
+          <div class="auth-header"><h2>Вход в кабинет</h2><p>Войдите, чтобы управлять заявками и личными данными.</p></div>
+          <form id="form-login" novalidate>
+            <div class="form-group"><label class="form-label">E-mail</label><input type="email" name="email" class="form-input" placeholder="client@example.com" required></div>
+            <div class="form-group"><label class="form-label">Пароль</label><div class="password-wrap"><input type="password" name="password" class="form-input" placeholder="••••••••" required><button type="button" class="toggle-password" onclick="app.togglePassword(this)">👁️</button></div></div>
+            <button type="submit" class="btn btn-gold btn-full">Войти</button>
+            <p class="auth-hint">Демо-вход: <code>client@example.com</code> / <code>123456</code></p>
+            <p class="auth-switch">Нет аккаунта? <a href="#" class="text-link" onclick="app.showScreen('register');return false;">Создать</a></p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== REGISTER ==================== -->
+    <section class="screen hidden" id="screen-register">
+      <div class="auth-container">
+        <div class="auth-card">
+          <div class="auth-header"><h2>Регистрация</h2><p>Создайте аккаунт клиента сети Interlink Labs.</p></div>
+          <form id="form-register" novalidate>
+            <div class="form-group"><label class="form-label">ФИО</label><input type="text" name="fullName" class="form-input" placeholder="Иван Иванов Иванович" required></div>
+            <div class="form-group"><label class="form-label">E-mail</label><input type="email" name="email" class="form-input" placeholder="ivan@example.com" required></div>
+            <div class="form-group"><label class="form-label">Пароль</label><div class="password-wrap"><input type="password" name="password" class="form-input" placeholder="••••••••" required><button type="button" class="toggle-password" onclick="app.togglePassword(this)">👁️</button></div></div>
+            <div class="form-group"><label class="form-label">Повторите пароль</label><div class="password-wrap"><input type="password" name="passwordConfirm" class="form-input" placeholder="••••••••" required><button type="button" class="toggle-password" onclick="app.togglePassword(this)">👁️</button></div></div>
+            <button type="submit" class="btn btn-gold btn-full">Создать аккаунт</button>
+            <p class="auth-switch">Уже есть аккаунт? <a href="#" class="text-link" onclick="app.showScreen('login');return false;">Войти</a></p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== CLIENT DASHBOARD ==================== -->
+    <section class="screen hidden" id="screen-client-dashboard">
+      <div class="page-header">
+        <div><h1 class="page-title">Личный кабинет</h1><p class="page-subtitle">Добро пожаловать, <span id="dashboard-user-name"></span></p></div>
+        <div class="page-actions"><button class="btn btn-gold" onclick="app.showScreen('create-booking')">Новая заявка</button></div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-value" id="stat-bookings-total">—</div><div class="stat-label">Всего заявок</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-bookings-active">—</div><div class="stat-label">Активных</div></div>
+        <div class="stat-card stat-card-gold"><div class="stat-value" id="stat-debt">0 ₽</div><div class="stat-label">Задолженность</div></div>
+      </div>
+      <div class="section">
+        <h3 class="section-title">Последние заявки</h3>
+        <div class="table-wrap" id="dashboard-bookings-list"></div>
+      </div>
+    </section>
+
+    <!-- ==================== ADMIN (WIP) ==================== -->
+    <section class="screen hidden" id="screen-admin">
+      <div class="wip-container">
+        <div class="wip-card">
+          <div class="wip-icon">🛠️</div>
+          <h1>В разработке</h1>
+          <p>Панель администратора находится в разработке и станет доступной в ближайшее время.</p>
+          <button class="btn btn-gold" onclick="app.showScreen('home')">На главную</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== LOCATIONS ==================== -->
+    <section class="screen hidden" id="screen-locations">
+      <div class="page-header">
+        <div><h1 class="page-title">Локации</h1><p class="page-subtitle">Нажмите на карточку, чтобы узнать подробности</p></div>
+      </div>
+      <div class="locations-grid" id="locations-list"></div>
+    </section>
+
+    <!-- ==================== CREATE BOOKING ==================== -->
+    <section class="screen hidden" id="screen-create-booking">
+      <div class="page-header">
+        <div><h1 class="page-title">Создание заявки</h1><p class="page-subtitle">Пошаговое оформление бронирования</p></div>
+      </div>
+      
+      <div class="stepper" id="booking-stepper">
+        <div class="step active"><div class="step-badge">1</div><div class="step-label">Тип</div></div>
+        <div class="step"><div class="step-badge">2</div><div class="step-label">Локация</div></div>
+        <div class="step"><div class="step-badge">3</div><div class="step-label">Дата и время</div></div>
+        <div class="step"><div class="step-badge">4</div><div class="step-label">Услуги</div></div>
+        <div class="step"><div class="step-badge">5</div><div class="step-label">Смета</div></div>
+      </div>
+
+      <div class="booking-form-wrap">
+        <!-- Шаг 1 -->
+        <div class="booking-step active" id="booking-step-1">
+          <div class="form-group">
+            <label class="form-label">Вид мероприятия <span class="required">*</span></label>
+            <div class="choice-grid" id="event-type-grid"></div>
+          </div>
+          <div class="step-actions"><button class="btn btn-gold" onclick="app.bookingNext(1)">Далее</button></div>
+        </div>
+
+        <!-- Шаг 2 -->
+        <div class="booking-step hidden" id="booking-step-2">
+          <div class="form-group">
+            <label class="form-label">Свободная локация <span class="required">*</span></label>
+            <div class="locations-choice-list" id="location-choice-list"></div>
+          </div>
+          <div class="step-actions">
+            <button class="btn btn-outline" onclick="app.bookingPrev(1)">Назад</button>
+            <button class="btn btn-gold" onclick="app.bookingNext(2)">Далее</button>
+          </div>
+        </div>
+
+        <!-- Шаг 3 -->
+        <div class="booking-step hidden" id="booking-step-3">
+          <div class="form-grid-2">
+            <div class="form-group"><label class="form-label">Дата <span class="required">*</span></label><input type="date" id="booking-date" class="form-input" required></div>
+            <div class="form-group"><label class="form-label">Количество участников <span class="required">*</span></label><input type="number" id="booking-participants" class="form-input" min="1" required></div>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-group"><label class="form-label">Время с <span class="required">*</span></label><input type="time" id="booking-time-start" class="form-input" required></div>
+            <div class="form-group"><label class="form-label">Время до <span class="required">*</span></label><input type="time" id="booking-time-end" class="form-input" required></div>
+          </div>
+          <p style="font-size:0.8rem;color:var(--muted);margin-top:-0.5rem;margin-bottom:1rem">Все локации работают до 02:00 ночи.</p>
+          <div class="form-group"><label class="form-label">Комментарий</label><textarea id="booking-comment" class="form-input" rows="2" placeholder="Пожелания по оформлению..."></textarea></div>
+          <div class="step-actions">
+            <button class="btn btn-outline" onclick="app.bookingPrev(2)">Назад</button>
+            <button class="btn btn-gold" onclick="app.bookingNext(3)">К услугам</button>
+          </div>
+        </div>
+
+        <!-- Шаг 4: ВЫБОР УСЛУГ -->
+        <div class="booking-step hidden" id="booking-step-4">
+          <div class="form-group">
+            <label class="form-label">Дополнительные услуги</label>
+            <div class="services-list" id="booking-services-list"></div>
+          </div>
+          <div class="step-actions">
+            <button class="btn btn-outline" onclick="app.bookingPrev(3)">Назад</button>
+            <button class="btn btn-gold" onclick="app.bookingNext(4)">К смете</button>
+          </div>
+        </div>
+
+        <!-- Шаг 5: СМЕТА -->
+        <div class="booking-step hidden" id="booking-step-5">
+          <div class="form-group">
+            <label class="form-label">Итоговая смета</label>
+            <div class="estimate-summary" id="estimate-summary"></div>
+          </div>
+          <div class="step-actions">
+            <button class="btn btn-outline" onclick="app.bookingPrev(4)">Назад</button>
+            <button class="btn btn-gold btn-full" onclick="app.submitBooking()">Отправить заявку</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== BOOKINGS ==================== -->
+    <section class="screen hidden" id="screen-bookings">
+      <div class="page-header">
+        <div><h1 class="page-title">Мои заявки</h1><p class="page-subtitle">Статус и история бронирований</p></div>
+      </div>
+      <div class="status-filter">
+        <button class="chip" data-filter="all" onclick="app.filterBookings('all')">Все</button>
+        <button class="chip" data-filter="pending" onclick="app.filterBookings('pending')">На рассмотрении</button>
+        <button class="chip" data-filter="approved" onclick="app.filterBookings('approved')">Одобрены</button>
+        <button class="chip" data-filter="rejected" onclick="app.filterBookings('rejected')">Отклонены</button>
+      </div>
+      <div class="table-wrap" id="bookings-list"></div>
+    </section>
+
+    <!-- ==================== ESTIMATE ==================== -->
+    <section class="screen hidden" id="screen-estimate">
+      <div class="page-header">
+        <div><h1 class="page-title">Смета и оплата</h1><p class="page-subtitle">Расчёт стоимости и история платежей</p></div>
+      </div>
+      <div class="estimate-layout">
+        <div class="estimate-services">
+          <h3>Дополнительные услуги</h3>
+          <div class="services-list" id="estimate-services-list"></div>
+          <div class="estimate-total"><span>Итого:</span><span id="estimate-total-value">0 ₽</span></div>
+        </div>
+        <div class="estimate-payment">
+          <h3>Оплата</h3>
+          <div class="payment-card">
+            <div class="payment-row"><span>Задолженность</span><span class="debt" id="payment-debt">0 ₽</span></div>
+            <div class="payment-row"><span>Оплачено</span><span class="paid" id="payment-paid">0 ₽</span></div>
+            <button class="btn btn-gold btn-full" style="margin-top:1rem" onclick="app.mockPay()">Оплатить онлайн</button>
+          </div>
+          <h3 style="margin-top:2rem">История платежей</h3>
+          <div class="table-wrap" id="payment-history"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== PROFILE ==================== -->
+    <section class="screen hidden" id="screen-profile">
+      <div class="page-header">
+        <div><h1 class="page-title">Профиль</h1><p class="page-subtitle">Редактирование личных данных</p></div>
+      </div>
+      <div class="profile-card">
+        <form id="form-profile" novalidate>
+          <div class="form-group"><label class="form-label">ФИО</label><input type="text" name="fullName" class="form-input" id="profile-fullName" required></div>
+          <div class="form-group"><label class="form-label">E-mail</label><input type="email" name="email" class="form-input" id="profile-email" required></div>
+          <div class="form-group"><label class="form-label">Новый пароль (необязательно)</label><div class="password-wrap"><input type="password" name="password" class="form-input" id="profile-password"><button type="button" class="toggle-password" onclick="app.togglePassword(this)">👁️</button></div></div>
+          <div class="form-group"><label class="form-label">Роль</label><input type="text" class="form-input" id="profile-role" readonly></div>
+          <button type="submit" class="btn btn-gold btn-full">Сохранить изменения</button>
+          <button type="button" class="btn btn-outline btn-full text-danger" onclick="app.deleteAccount()" style="margin-top:12px">Удалить аккаунт</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header"><h3 id="modal-title">Заголовок</h3><button class="modal-close" onclick="app.closeModal()">×</button></div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions" id="modal-actions"></div>
+    </div>
+  </div>
+
+  <script src="../static/main.js"></script>
+</body>
+</html>
