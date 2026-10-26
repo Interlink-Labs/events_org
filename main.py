@@ -108,3 +108,4 @@ async def health_check():
 
 # Для запуска через uvicorn app.main:app, если нужно
 app = main_app
+print("Модуль 42 сработал успешно")
