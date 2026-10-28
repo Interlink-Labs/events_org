@@ -1,149 +1,86 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import Optional
-import events_db
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import date, datetime
+import database
+
+app = FastAPI(title="Events API")
 
 
-# ==================== SCHEMAS ====================
-class VenuePackage(BaseModel):
-    name: str
-    address: str
-    capacity: int
-    description: Optional[str] = None
+class EventBase(BaseModel):
+    client_id: int
+    location_id: int
+    event_type: str
+    date: date
+    time_start: str
+    time_end: str
+    participants: int
+    total_amount: float
+    comment: Optional[str] = ""
+    services: List[int] = []
+    service_configs: dict = {}
+
+class EventCreate(EventBase):
+    pass
+
+class EventResponse(EventBase):
+    id: int
+    status: str
+    created_at: datetime
+
+class StatusUpdate(BaseModel):
+    new_status: str
 
 
-class EventPackage(BaseModel):
-    title: str
-    date: str  # "YYYY-MM-DDTHH:MM:SS"
-    location: str
-    participants_count: int
-    description: Optional[str] = None
-    venue_id: Optional[int] = None
 
+@app.post("/", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
+async def create_event(event: EventCreate):
+    
+    event_data = event.model_dump()
+    event_data["date"] = str(event_data["date"]) 
 
-class EventUpdatePackage(BaseModel):
-    title: Optional[str] = None
-    date: Optional[str] = None
-    location: Optional[str] = None
-    participants_count: Optional[int] = None
-    description: Optional[str] = None
-    venue_id: Optional[int] = None
-
-
-app = FastAPI()
-
-
-# ==================== VENUES ====================
-@app.post("/api/v1/venues/create")
-def create_venue(v: VenuePackage):
-    venue_id = events_db.create_venue(v.name, v.address, v.capacity, v.description)
-    return {"ok": True, "venue_id": venue_id}
-
-
-@app.get("/api/v1/venues")
-def get_venues():
-    return events_db.list_venues()
-
-
-@app.get("/api/v1/venues/{venue_id}")
-def get_venue(venue_id: int):
-    v = events_db.get_venue(venue_id)
-    return v if v else {"error": "Площадка не найдена"}
-
-
-# ==================== EVENTS (CRUD) ====================
-@app.post("/api/v1/events/create")
-def create_event(e: EventPackage):
-    event_id = events_db.create_event(
-        title=e.title,
-        date=e.date,
-        location=e.location,
-        participants_count=e.participants_count,
-        description=e.description,
-        venue_id=e.venue_id
-    )
-
-    # Автоподбор + автобронь, если площадка не задана
-    if e.venue_id is None:
-        suitable = events_db.find_suitable_venues(e.participants_count, e.date)
-        if not suitable:
-            events_db.delete_event(event_id)
-            return {"ok": False, "error": "Нет свободных подходящих площадок на эту дату"}
-
-        venue = suitable[0]
-        result = events_db.book_venue(event_id, venue["id"])
-        if not result["ok"]:
-            events_db.delete_event(event_id)
-            return {"ok": False, "error": result["error"]}
-
-        return {
-            "ok": True,
-            "event_id": event_id,
-            "booked_venue": venue
-        }
-
-    # Если площадка задана — бронируем её
-    result = events_db.book_venue(event_id, e.venue_id)
+    # Вызываем функцию из database.py
+    result = database.create_event_db(event_data)
+    
     if not result["ok"]:
-        events_db.delete_event(event_id)
-        return {"ok": False, "error": result["error"]}
-
-    return {"ok": True, "event_id": event_id, "booking_id": result["booking_id"]}
+        raise HTTPException(status_code=400, detail=result["error"])
 
 
-@app.get("/api/v1/events")
-def get_events():
-    return events_db.list_events()
+    created_events = database.get_events_db()
+    created = next((e for e in created_events if e["id"] == result["event_id"]), None)
+    return created
 
 
-@app.get("/api/v1/events/{event_id}")
-def get_event(event_id: int):
-    e = events_db.get_event(event_id)
-    return e if e else {"error": "Мероприятие не найдено"}
+@app.get("/", response_model=List[EventResponse])
+async def get_events(client_id: Optional[int] = None, status_filter: Optional[str] = None):
+    return database.get_events_db(client_id, status_filter)
 
 
-@app.post("/api/v1/events/{event_id}/update")
-def update_event(event_id: int, e: EventUpdatePackage):
-    ok = events_db.update_event(event_id, **e.model_dump(exclude_unset=True))
-    return {"ok": ok, "msg": "Обновлено" if ok else "Мероприятие не найдено"}
+@app.get("/{event_id}", response_model=EventResponse)
+async def get_event(event_id: int):
+    events = database.get_events_db()
+    event = next((e for e in events if e["id"] == event_id), None)
+    if not event:
+        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+    return event
 
 
-@app.post("/api/v1/events/{event_id}/delete")
-def delete_event(event_id: int):
-    ok = events_db.delete_event(event_id)
-    return {"ok": ok, "msg": "Удалено" if ok else "Мероприятие не найдено"}
+@app.put("/{event_id}/status")
+async def update_event_status(event_id: int, payload: StatusUpdate):
+    valid_statuses = ["pending", "approved", "rejected", "completed"]
+    if payload.new_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Неверный статус")
+    
+    success = database.update_status_db(event_id, payload.new_status)
+    if not success:
+         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+         
+    return {"message": "Статус обновлен", "event_id": event_id, "status": payload.new_status}
 
 
-# ==================== ПОДБОР ПЛОЩАДКИ ====================
-@app.get("/api/v1/venues/suitable")
-def suitable_venues(participants: int, event_date: str):
-    return events_db.find_suitable_venues(participants, event_date)
-
-
-# ==================== БРОНИРОВАНИЕ ====================
-@app.post("/api/v1/events/{event_id}/book")
-def book_event(event_id: int, venue_id: int):
-    return events_db.book_venue(event_id, venue_id)
-
-
-@app.get("/api/v1/events/{event_id}/booking")
-def get_booking(event_id: int):
-    b = events_db.get_booking(event_id)
-    return b if b else {"error": "Брони нет"}
-import uvicorn
-from fastapi import FastAPI
-
-from clients.Testun import client_bp
-
-app = FastAPI()
-
-app.include_router(client_bp)
-
-
-@app.get('/')
-def root():
-    return {"message": "API работает. Открой /docs"}
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+@app.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_event(event_id: int):
+    success = database.delete_event_db(event_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+    return None

@@ -1,17 +1,17 @@
 import sqlite3
 import os
+import json
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "my_database.db")
-
 
 # ==================== ИНИЦИАЛИЗАЦИЯ БД ====================
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        # Площадки
+        # Площадки (локации)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS venues (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,16 +22,23 @@ def init_db():
             )
         ''')
 
-        # Мероприятия
+        # Мероприятия (поля подстроены под твой фронтенд)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                description TEXT,
-                date TEXT NOT NULL,        -- ISO: YYYY-MM-DDTHH:MM:SS
-                location TEXT NOT NULL,
-                participants_count INTEGER NOT NULL,
-                venue_id INTEGER
+                client_id INTEGER NOT NULL,
+                location_id INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                date TEXT NOT NULL,
+                time_start TEXT NOT NULL,
+                time_end TEXT NOT NULL,
+                participants INTEGER NOT NULL,
+                total_amount REAL NOT NULL,
+                comment TEXT,
+                services TEXT,          -- JSON строка
+                service_configs TEXT,   -- JSON строка
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL
             )
         ''')
 
@@ -44,193 +51,107 @@ def init_db():
                 booked_at TEXT NOT NULL
             )
         ''')
+        
+        # Добавим пару тестовых локаций, если таблица пустая
+        cursor.execute('SELECT COUNT(*) FROM venues')
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO venues (name, address, capacity) VALUES (?, ?, ?)", ("Зал Гранд", "ул. Центральная, 10", 200))
+            cursor.execute("INSERT INTO venues (name, address, capacity) VALUES (?, ?, ?)", ("Лофт Кирпич", "пр-т Индустриальный, 25", 80))
 
-
-# ==================== ПЛОЩАДКИ ====================
-def create_venue(name, address, capacity, description=None):
+# ==================== МЕРОПРИЯТИЯ И БРОНИРОВАНИЕ ====================
+def create_event_db(data: dict):
+    """Создает мероприятие и сразу бронирует локацию (если свободна)"""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
+        
+        # 1. Проверка: существует ли локация и хватает ли мест
+        cursor.execute('SELECT capacity, name FROM venues WHERE id = ?', (data["location_id"],))
+        venue = cursor.fetchone()
+        if not venue:
+            return {"ok": False, "error": "Локация не найдена"}
+        
+        capacity, venue_name = venue
+        if data["participants"] > capacity:
+            return {"ok": False, "error": f"Локация '{venue_name}' вмещает только {capacity} человек"}
+
+        # 2. Проверка: свободна ли локация на эту дату
         cursor.execute('''
-            INSERT INTO venues (name, address, capacity, description)
-            VALUES (?, ?, ?, ?)
-        ''', (name, address, capacity, description))
-        return cursor.lastrowid
+            SELECT b.id FROM bookings b
+            JOIN events e ON e.id = b.event_id
+            WHERE b.venue_id = ? AND substr(e.date, 1, 10) = ?
+        ''', (data["location_id"], data["date"]))
+        if cursor.fetchone():
+            return {"ok": False, "error": "Локация уже забронирована на эту дату"}
 
-
-def get_venue(venue_id):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, name, address, capacity, description FROM venues WHERE id = ?', (venue_id,))
-        row = cursor.fetchone()
-        if row:
-            return {
-                "id": row[0], "name": row[1], "address": row[2],
-                "capacity": row[3], "description": row[4]
-            }
-        return None
-
-
-def list_venues():
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, name, address, capacity, description FROM venues')
-        return [
-            {"id": r[0], "name": r[1], "address": r[2], "capacity": r[3], "description": r[4]}
-            for r in cursor.fetchall()
-        ]
-
-
-# ==================== МЕРОПРИЯТИЯ (CRUD) ====================
-def create_event(title, date, location, participants_count, description=None, venue_id=None):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
+        # 3. Создаем мероприятие
         cursor.execute('''
-            INSERT INTO events (title, description, date, location, participants_count, venue_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (title, description, date, location, participants_count, venue_id))
-        return cursor.lastrowid
+            INSERT INTO events (
+                client_id, location_id, event_type, date, time_start, time_end, 
+                participants, total_amount, comment, services, service_configs, 
+                status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data["client_id"], data["location_id"], data["event_type"], data["date"],
+            data["time_start"], data["time_end"], data["participants"], data["total_amount"],
+            data.get("comment", ""), 
+            json.dumps(data.get("services", [])), 
+            json.dumps(data.get("service_configs", {})),
+            "pending", # По умолчанию
+            datetime.now().isoformat()
+        ))
+        event_id = cursor.lastrowid
 
-
-def get_event(event_id):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
+        # 4. Создаем бронь
         cursor.execute('''
-            SELECT id, title, description, date, location, participants_count, venue_id
-            FROM events WHERE id = ?
-        ''', (event_id,))
-        row = cursor.fetchone()
-        if row:
-            return {
-                "id": row[0], "title": row[1], "description": row[2],
-                "date": row[3], "location": row[4],
-                "participants_count": row[5], "venue_id": row[6]
-            }
-        return None
+            INSERT INTO bookings (venue_id, event_id, booked_at)
+            VALUES (?, ?, ?)
+        ''', (data["location_id"], event_id, datetime.now().isoformat()))
+
+        return {"ok": True, "event_id": event_id}
 
 
-def list_events():
+def get_events_db(client_id: int = None, status_filter: str = None):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = 'SELECT * FROM events WHERE 1=1'
+        params = []
+        
+        if client_id:
+            query += ' AND client_id = ?'
+            params.append(client_id)
+        if status_filter:
+            query += ' AND status = ?'
+            params.append(status_filter)
+            
+        query += ' ORDER BY created_at DESC'
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        # Преобразуем в список словарей и расшифровываем JSON
+        result = []
+        for row in rows:
+            event = dict(row)
+            event["services"] = json.loads(event["services"]) if event["services"] else []
+            event["service_configs"] = json.loads(event["service_configs"]) if event["service_configs"] else {}
+            result.append(event)
+        return result
+
+
+def update_status_db(event_id: int, new_status: str):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, title, description, date, location, participants_count, venue_id
-            FROM events
-        ''')
-        return [
-            {"id": r[0], "title": r[1], "description": r[2], "date": r[3],
-             "location": r[4], "participants_count": r[5], "venue_id": r[6]}
-            for r in cursor.fetchall()
-        ]
+        cursor.execute('UPDATE events SET status = ? WHERE id = ?', (new_status, event_id))
+        return cursor.rowcount > 0
 
 
-def update_event(event_id, **fields):
-    event = get_event(event_id)
-    if not event:
-        return False
-
-    allowed = {"title", "description", "date", "location", "participants_count", "venue_id"}
-    fields = {k: v for k, v in fields.items() if k in allowed and v is not None}
-    if not fields:
-        return False
-
-    set_clause = ", ".join(f"{k} = ?" for k in fields)
-    values = list(fields.values()) + [event_id]
-
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'UPDATE events SET {set_clause} WHERE id = ?', values)
-        return True
-
-
-def delete_event(event_id):
+def delete_event_db(event_id: int):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute('DELETE FROM bookings WHERE event_id = ?', (event_id,))
         cursor.execute('DELETE FROM events WHERE id = ?', (event_id,))
         return cursor.rowcount > 0
 
-
-# ==================== ПОДБОР ПЛОЩАДКИ ====================
-def find_suitable_venues(participants_count, event_date):
-    """
-    event_date: ISO-строка 'YYYY-MM-DDTHH:MM:SS'
-    Возвращает площадки, где capacity >= participants_count
-    и которые НЕ заняты на этот день.
-    """
-    day = event_date[:10]  # берём YYYY-MM-DD
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-
-        # Занятые площадки в этот день
-        cursor.execute('''
-            SELECT b.venue_id
-            FROM bookings b
-            JOIN events e ON e.id = b.event_id
-            WHERE substr(e.date, 1, 10) = ?
-        ''', (day,))
-        busy_ids = {row[0] for row in cursor.fetchall()}
-
-        cursor.execute('SELECT id, name, address, capacity, description FROM venues WHERE capacity >= ?', (participants_count,))
-        venues = cursor.fetchall()
-
-    return [
-        {"id": r[0], "name": r[1], "address": r[2], "capacity": r[3], "description": r[4]}
-        for r in venues if r[0] not in busy_ids
-    ]
-
-
-# ==================== БРОНИРОВАНИЕ ====================
-def book_venue(event_id, venue_id):
-    """Создаёт бронь. Проверяет вместимость и конфликт по дате."""
-    event = get_event(event_id)
-    if not event:
-        return {"ok": False, "error": "Мероприятие не найдено"}
-
-    venue = get_venue(venue_id)
-    if not venue:
-        return {"ok": False, "error": "Площадка не найдена"}
-
-    if venue["capacity"] < event["participants_count"]:
-        return {"ok": False, "error": "Площадка слишком мала для такого количества участников"}
-
-    day = event["date"][:10]
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-
-        # Уже есть бронь у мероприятия?
-        cursor.execute('SELECT id FROM bookings WHERE event_id = ?', (event_id,))
-        if cursor.fetchone():
-            return {"ok": False, "error": "Мероприятие уже забронировано"}
-
-        # Площадка занята в этот день?
-        cursor.execute('''
-            SELECT b.id FROM bookings b
-            JOIN events e ON e.id = b.event_id
-            WHERE b.venue_id = ? AND substr(e.date, 1, 10) = ?
-        ''', (venue_id, day))
-        if cursor.fetchone():
-            return {"ok": False, "error": "Площадка уже забронирована на эту дату"}
-
-        cursor.execute('''
-            INSERT INTO bookings (venue_id, event_id, booked_at)
-            VALUES (?, ?, ?)
-        ''', (venue_id, event_id, datetime.utcnow().isoformat()))
-
-        cursor.execute('UPDATE events SET venue_id = ? WHERE id = ?', (venue_id, event_id))
-
-        return {"ok": True, "booking_id": cursor.lastrowid}
-
-
-def get_booking(event_id):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, venue_id, event_id, booked_at
-            FROM bookings WHERE event_id = ?
-        ''', (event_id,))
-        row = cursor.fetchone()
-        if row:
-            return {"id": row[0], "venue_id": row[1], "event_id": row[2], "booked_at": row[3]}
-        return None
-
-
+# Инициализируем базу при импорте файла
 init_db()
