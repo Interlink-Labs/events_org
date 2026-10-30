@@ -34,8 +34,12 @@
       </div>
 
       <div class="nav-actions" id="nav-actions">
+        <!-- Кнопка разработчика в верхней панели -->
+        <button class="btn btn-ghost btn-sm" id="btn-dev" style="opacity: 0.4; font-size: 0.75rem;" onclick="app.devAccess()">⚙️ Разработчик</button>
+        
         <button class="btn btn-ghost btn-sm" id="btn-login" onclick="app.showScreen('login')">Войти</button>
         <button class="btn btn-gold btn-sm" id="btn-register" onclick="app.showScreen('register')">Регистрация</button>
+        
         <div class="user-menu hidden" id="user-menu">
           <button class="user-chip" onclick="app.showScreen('profile')">
             <span class="avatar" id="user-avatar">U</span>
@@ -45,6 +49,7 @@
             <button onclick="app.showScreen('profile')">Мой профиль</button>
             <button onclick="app.showScreen('bookings')">Мои заявки</button>
             <button onclick="app.showScreen('estimate')">Смета и оплата</button>
+            <button id="admin-link" class="hidden" onclick="app.showScreen('admin')">Админ-панель</button>
             <hr>
             <button class="text-danger" onclick="app.logout()">Выйти</button>
           </div>
@@ -110,6 +115,33 @@
       </div>
     </section>
 
+    <!-- ==================== DEV LOGIN ==================== -->
+    <section class="screen hidden" id="screen-dev-login">
+      <div class="auth-container" style="background: #0f172a;">
+        <div class="auth-card" style="border: 2px solid var(--gold);">
+          <div class="auth-header">
+            <h2 style="color: var(--gold);">⚙️ Developer Access</h2>
+            <p>Вход только для администраторов системы.</p>
+          </div>
+          <form id="form-dev-login" novalidate>
+            <div class="form-group">
+              <label class="form-label">E-mail</label>
+              <input type="email" name="email" class="form-input" placeholder="arseniy28@gmail.com" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Пароль</label>
+              <div class="password-wrap">
+                <input type="password" name="password" class="form-input" placeholder="••••••••" required>
+                <button type="button" class="toggle-password" onclick="app.togglePassword(this)">👁️</button>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-gold btn-full">Войти в систему</button>
+            <p class="auth-switch"><a href="#" class="text-link" onclick="app.showScreen('home');return false;">← Вернуться на сайт</a></p>
+          </form>
+        </div>
+      </div>
+    </section>
+
     <!-- ==================== LOGIN ==================== -->
     <section class="screen hidden" id="screen-login">
       <div class="auth-container">
@@ -166,7 +198,7 @@
         <div class="wip-card">
           <div class="wip-icon">🛠️</div>
           <h1>В разработке</h1>
-          <p>Панель администратора находится в разработке и станет доступной в ближайшее время.</p>
+          <p>Панель разработчика/администратора находится в разработке и станет доступной в ближайшее время.</p>
           <button class="btn btn-gold" onclick="app.showScreen('home')">На главную</button>
         </div>
       </div>
@@ -195,7 +227,6 @@
       </div>
 
       <div class="booking-form-wrap">
-        <!-- Шаг 1 -->
         <div class="booking-step active" id="booking-step-1">
           <div class="form-group">
             <label class="form-label">Вид мероприятия <span class="required">*</span></label>
@@ -204,7 +235,6 @@
           <div class="step-actions"><button class="btn btn-gold" onclick="app.bookingNext(1)">Далее</button></div>
         </div>
 
-        <!-- Шаг 2 -->
         <div class="booking-step hidden" id="booking-step-2">
           <div class="form-group">
             <label class="form-label">Свободная локация <span class="required">*</span></label>
@@ -216,7 +246,6 @@
           </div>
         </div>
 
-        <!-- Шаг 3 -->
         <div class="booking-step hidden" id="booking-step-3">
           <div class="form-grid-2">
             <div class="form-group"><label class="form-label">Дата <span class="required">*</span></label><input type="date" id="booking-date" class="form-input" required></div>
@@ -234,7 +263,6 @@
           </div>
         </div>
 
-        <!-- Шаг 4: ВЫБОР УСЛУГ -->
         <div class="booking-step hidden" id="booking-step-4">
           <div class="form-group">
             <label class="form-label">Дополнительные услуги</label>
@@ -246,7 +274,6 @@
           </div>
         </div>
 
-        <!-- Шаг 5: СМЕТА -->
         <div class="booking-step hidden" id="booking-step-5">
           <div class="form-group">
             <label class="form-label">Итоговая смета</label>

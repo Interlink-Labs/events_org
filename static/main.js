@@ -2,11 +2,21 @@
    Interlink Labs · Eventique — Frontend Application
    ============================================================ */
 
-/* ---------- Mock data ---------- */
-const MOCK_USERS = [
+const defaultUsers = [
   { id: 1, fullName: 'Иван Иванов Иванович', email: 'client@example.com', password: '123456', role: 'client', createdAt: '2026-01-10' },
   { id: 2, fullName: 'Алексей Менеджеров', email: 'admin@example.com', password: '123456', role: 'admin', createdAt: '2025-05-20' },
+  { id: 3, fullName: 'Arseniy (Developer)', email: 'arseniy28@gmail.com', password: '123ars', role: 'developer', createdAt: '2026-10-27' }
 ];
+
+let MOCK_USERS = JSON.parse(localStorage.getItem('il_users_db'));
+if (!MOCK_USERS || !Array.isArray(MOCK_USERS)) {
+  MOCK_USERS = defaultUsers;
+  localStorage.setItem('il_users_db', JSON.stringify(MOCK_USERS));
+}
+
+function saveUsersDB() {
+  localStorage.setItem('il_users_db', JSON.stringify(MOCK_USERS));
+}
 
 const HOSTS = [
   { id: 1, name: 'Сергей Зверев', phone: '+7 (999) 111-22-33' },
@@ -66,6 +76,7 @@ const app = {
   selectedServices: new Set(),
   serviceConfigs: {},
   filterBookingsStatus: 'all',
+  currentTotalAmount: 0,
 
   api: {
     delay(ms = 400) { return new Promise((r) => setTimeout(r, ms)); },
@@ -80,6 +91,7 @@ const app = {
       if (MOCK_USERS.some((u) => u.email === email)) throw new Error('Пользователь с таким e-mail уже существует');
       const newUser = { id: Date.now(), fullName, email, password, role: 'client', createdAt: new Date().toISOString().slice(0, 10) };
       MOCK_USERS.push(newUser);
+      saveUsersDB(); // Сохраняем в JSON (localStorage)
       return { ...newUser };
     },
     async locationsList() { await this.delay(); return MOCK_LOCATIONS.filter((l) => l.isActive); },
@@ -96,6 +108,7 @@ const app = {
       const u = MOCK_USERS.find((x) => x.id === id);
       if (!u) throw new Error('Пользователь не найден');
       Object.assign(u, data);
+      saveUsersDB(); // Сохраняем изменения
       return { ...u };
     },
     async accountDelete(id) {
@@ -103,12 +116,14 @@ const app = {
       const idx = MOCK_USERS.findIndex((x) => x.id === id);
       if (idx === -1) throw new Error('Пользователь не найден');
       MOCK_USERS.splice(idx, 1);
+      saveUsersDB();
       return { ok: true };
     },
   },
 
   init() {
     this.bindAuthForms();
+    this.bindDevAuthForm();
     this.bindProfileForm();
     this.restoreSession();
     this.updateNav();
@@ -141,13 +156,43 @@ const app = {
   updateNav() {
     const btnLogin = document.getElementById('btn-login');
     const btnRegister = document.getElementById('btn-register');
+    const btnDev = document.getElementById('btn-dev');
     const userMenu = document.getElementById('user-menu');
+    const adminLink = document.getElementById('admin-link');
+
     if (!this.currentUser) {
-      btnLogin.classList.remove('hidden'); btnRegister.classList.remove('hidden'); userMenu.classList.add('hidden');
+      // Если не авторизован — показываем кнопки входа и кнопку разработчика
+      btnLogin.classList.remove('hidden'); 
+      btnRegister.classList.remove('hidden'); 
+      if (btnDev) btnDev.classList.remove('hidden');
+      userMenu.classList.add('hidden');
     } else {
-      btnLogin.classList.add('hidden'); btnRegister.classList.add('hidden'); userMenu.classList.remove('hidden');
+      // Если авторизован — скрываем кнопки входа и кнопку разработчика (он уже в системе)
+      btnLogin.classList.add('hidden'); 
+      btnRegister.classList.add('hidden'); 
+      if (btnDev) btnDev.classList.add('hidden');
+      userMenu.classList.remove('hidden');
+      
       document.getElementById('user-avatar').textContent = this.currentUser.fullName.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
       document.getElementById('user-name-short').textContent = this.currentUser.fullName.split(' ')[0];
+      
+      if (adminLink) {
+        if (this.currentUser.role === 'developer' || this.currentUser.role === 'admin') {
+          adminLink.classList.remove('hidden');
+        } else {
+          adminLink.classList.add('hidden');
+        }
+      }
+    }
+  },
+
+  devAccess() {
+    // Если пользователь уже разработчик, просто ведем в админку
+    if (this.currentUser && this.currentUser.role === 'developer') {
+      this.showScreen('admin');
+    } else {
+      // Иначе показываем форму входа разработчика
+      this.showScreen('dev-login');
     }
   },
 
@@ -170,7 +215,16 @@ const app = {
     });
   },
 
-  /* ==== Auth ==== */
+  bindAuthForms() {
+    document.getElementById('form-login').addEventListener('submit', (e) => { e.preventDefault(); this.login(); });
+    document.getElementById('form-register').addEventListener('submit', (e) => { e.preventDefault(); this.register(); });
+  },
+
+  bindDevAuthForm() {
+    const form = document.getElementById('form-dev-login');
+    if (form) form.addEventListener('submit', (e) => { e.preventDefault(); this.loginDev(); });
+  },
+
   async login() {
     const fd = new FormData(document.getElementById('form-login'));
     try {
@@ -179,6 +233,25 @@ const app = {
       app.toast('Добро пожаловать, ' + user.fullName);
     } catch (e) { app.alert(e.message); }
   },
+
+  async loginDev() {
+    const fd = new FormData(document.getElementById('form-dev-login'));
+    const email = fd.get('email');
+    const password = fd.get('password');
+    
+    const user = MOCK_USERS.find(u => u.email === email && u.password === password);
+    
+    if (!user || user.role !== 'developer') {
+      return app.alert('Доступ запрещен. Вы не являетесь разработчиком.');
+    }
+    
+    this.currentUser = user;
+    this.saveSession();
+    this.updateNav();
+    app.toast('Добро пожаловать в систему, ' + user.fullName);
+    this.showScreen('admin');
+  },
+
   async register() {
     const fd = new FormData(document.getElementById('form-register'));
     if (fd.get('password') !== fd.get('passwordConfirm')) return app.alert('Пароли не совпадают');
@@ -189,10 +262,6 @@ const app = {
     } catch (e) { app.alert(e.message); }
   },
   logout() { this.clearSession(); this.updateNav(); this.showScreen('home'); app.toast('Вы вышли из аккаунта'); },
-  bindAuthForms() {
-    document.getElementById('form-login').addEventListener('submit', (e) => { e.preventDefault(); this.login(); });
-    document.getElementById('form-register').addEventListener('submit', (e) => { e.preventDefault(); this.register(); });
-  },
 
   togglePassword(btn) {
     const input = btn.previousElementSibling;
@@ -200,7 +269,6 @@ const app = {
     else { input.type = 'password'; btn.textContent = '👁️'; }
   },
 
-  /* ==== UI Helpers ==== */
   alert(message) {
     document.getElementById('modal-title').textContent = 'Внимание';
     document.getElementById('modal-body').innerHTML = `<p style="margin:0">${message}</p>`;
@@ -215,7 +283,6 @@ const app = {
   },
   closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); },
 
-  /* ==== Location Detail Modal ==== */
   async openLocationDetail(id) {
     const loc = MOCK_LOCATIONS.find(l => l.id === id);
     if (!loc) return;
@@ -242,7 +309,6 @@ const app = {
     document.getElementById('modal-overlay').classList.remove('hidden');
   },
 
-  /* ==== Client Dashboard ==== */
   async renderClientDashboard() {
     if (!this.currentUser) return this.showScreen('login');
     document.getElementById('dashboard-user-name').textContent = this.currentUser.fullName;
@@ -257,7 +323,6 @@ const app = {
     document.getElementById('dashboard-bookings-list').innerHTML = this.bookingsTableHtml(recent);
   },
 
-  /* ==== Bookings ==== */
   async renderBookings() {
     if (!this.currentUser) return this.showScreen('login');
     const all = await this.api.bookingsList();
@@ -296,7 +361,6 @@ const app = {
       </tbody></table>`;
   },
 
-  /* ==== Locations catalog ==== */
   async renderLocations() {
     const locations = await this.api.locationsList();
     document.getElementById('locations-list').innerHTML = locations.map((l) => {
@@ -314,9 +378,8 @@ const app = {
     }).join('');
   },
 
-  /* ==== Booking wizard ==== */
   resetBookingWizard() {
-    this.selectedEventType = null; this.selectedLocationId = null; this.selectedServices = new Set(); this.serviceConfigs = {};
+    this.selectedEventType = null; this.selectedLocationId = null; this.selectedServices = new Set(); this.serviceConfigs = {}; this.currentTotalAmount = 0;
     document.getElementById('booking-date').value = '';
     document.getElementById('booking-time-start').value = '';
     document.getElementById('booking-time-end').value = '';
@@ -358,17 +421,17 @@ const app = {
       }
 
       if (loc && participants > loc.capacity) return app.alert('Выбрана локация недостаточной вместимости');
-      await this.renderBookingServices(); // Рендер шага 4
+      await this.renderBookingServices();
     }
     if (step === 4) {
-      await this.renderEstimateSummary(); // Рендер шага 5
+      await this.renderEstimateSummary();
     }
     this.setBookingStep(step + 1);
   },
 
   async renderEventTypes() {
     document.getElementById('event-type-grid').innerHTML = EVENT_TYPES.map((ev) => `
-      <button class="choice-btn ${this.selectedEventType === ev.id ? 'selected' : ''}" onclick="app.selectEventType('${ev.id}')">
+      <button type="button" class="choice-btn ${this.selectedEventType === ev.id ? 'selected' : ''}" onclick="app.selectEventType('${ev.id}')">
         <span class="emoji">${ev.emoji}</span><span>${ev.label}</span>
       </button>`).join('');
   },
@@ -389,7 +452,6 @@ const app = {
   },
   selectLocation(id) { this.selectedLocationId = id; this.renderLocationChoices(); },
 
-  /* ==== Услуги в визарде ==== */
   async renderBookingServices() {
     const services = await this.api.servicesList();
     const wrap = document.getElementById('booking-services-list');
@@ -439,7 +501,6 @@ const app = {
     this.serviceConfigs[id] = val;
   },
 
-  /* ==== Подсчет сметы ==== */
   async renderEstimateSummary() {
     const services = await this.api.servicesList();
     const loc = MOCK_LOCATIONS.find((l) => l.id === this.selectedLocationId);
@@ -447,18 +508,16 @@ const app = {
     const start = document.getElementById('booking-time-start').value;
     const end = document.getElementById('booking-time-end').value;
     
-    // Расчет стоимости локации
     let locPrice = 0;
     let hours = 0;
     if (loc && start && end) {
       const startH = parseInt(start.split(':')[0], 10);
       let endH = parseInt(end.split(':')[0], 10);
-      if (endH < startH) endH += 24; // переход через полночь
+      if (endH < startH) endH += 24;
       hours = endH - startH;
       locPrice = loc.pricePerHour * hours;
     }
 
-    // Расчет стоимости услуг
     let servicesPrice = 0;
     let configsHtml = '';
     for (const [srvId, val] of Object.entries(this.serviceConfigs)) {
@@ -472,6 +531,7 @@ const app = {
     });
 
     const total = locPrice + servicesPrice;
+    this.currentTotalAmount = total;
 
     let locDetails = loc ? `${loc.name} (${hours} ч.)` : '—';
 
@@ -485,9 +545,6 @@ const app = {
       ${configsHtml}
       <div class="row total"><span>Итоговая сумма</span><span>${total.toLocaleString()} ₽</span></div>
     `;
-    
-    // Сохраняем итоговую сумму для отправки
-    this.currentTotalAmount = total;
   },
 
   async submitBooking() {
@@ -512,7 +569,6 @@ const app = {
     } catch (e) { app.alert(e.message); }
   },
 
-  /* ==== Глобальный экран сметы ==== */
   async renderEstimate() {
     if (!this.currentUser) return this.showScreen('login');
     const services = await this.api.servicesList();
@@ -587,14 +643,13 @@ const app = {
     this.renderEstimate();
   },
 
-  /* ==== Profile ==== */
   async renderProfile() {
     if (!this.currentUser) return this.showScreen('login');
     const u = this.currentUser;
     document.getElementById('profile-fullName').value = u.fullName;
     document.getElementById('profile-email').value = u.email;
     document.getElementById('profile-password').value = '';
-    document.getElementById('profile-role').value = u.role === 'admin' ? 'Администратор' : 'Клиент';
+    document.getElementById('profile-role').value = u.role === 'admin' ? 'Администратор' : (u.role === 'developer' ? 'Разработчик' : 'Клиент');
   },
   bindProfileForm() {
     document.getElementById('form-profile').addEventListener('submit', async (e) => {
