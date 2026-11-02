@@ -34,7 +34,8 @@ def sign_client(user: Package):
         return 'Неверный логин или пароль'
 
 @app.post("/api/v1/clients/get")
-def get_client(username: str):  
+def get_client(user:Package):
+    username = user.username  
     return clients.get_user(username)
 
 @app.post("/api/v1/clients/update")
@@ -48,7 +49,8 @@ def update_client(user: Package):
         return 'Пользователь не найден'
 
 @app.post("/api/v1/clients/delete")
-def delete_client(username: str):
+def delete_client(user:Package):
+    username = user.username
     if clients.delete_user(username):
         return 'Пользователь удален'
     else:
@@ -72,7 +74,7 @@ def set_cookie(username, response: Response):
         key="refresh_token", 
         value=value, 
         httponly=True,  # Защита: JavaScript на клиенте не сможет прочитать эту куку
-        max_age=900,    # Время жизни куки в секундах (1 час)
+        max_age=86400,    # Время жизни куки в секундах (1 час)
         samesite="lax"  # Защита от CSRF-атак
     )
 
