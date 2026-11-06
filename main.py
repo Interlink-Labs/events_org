@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Cookie
 from pydantic import BaseModel
 import clients
 from hashlib import sha256
@@ -72,9 +72,19 @@ def set_cookie(username, response: Response):
         key="refresh_token", 
         value=value, 
         httponly=True,  # Защита: JavaScript на клиенте не сможет прочитать эту куку
-        max_age=900,    # Время жизни куки в секундах (1 час)
+        max_age=86400,    # Время жизни куки в секундах (1 час)
         samesite="lax"  # Защита от CSRF-атак
     )
 
     clients.write_cookie(access_token, refresh_token, username)
     return {"message": "Куки успешно установлены!"}
+
+@app.get('/api/v1/check-cookie')
+def check_cookie(username, access_token: str = Cookie(None), refresh_token: str = Cookie(None)):
+    cursor = clients.get_tokens(username)
+    a = list(cursor)
+    user_access_token = a[0][0]
+    user_refresh_token = a[0][1]
+    if user_access_token == access_token and user_refresh_token == refresh_token:
+        return True
+    return access_token, refresh_token, user_access_token, user_refresh_token

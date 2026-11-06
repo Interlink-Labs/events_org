@@ -39,12 +39,12 @@ def check_user(username):
 
 def get_user(username):
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT username, password FROM users WHERE username = ?', (username,))
-        for row in cursor:
-            if username == row[0]:
-                return f'username: {row[0]}, password: {row[1]}'
-        return 'No such user'
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+            for row in cursor:
+                if username == row[1]:
+                    return row
+            return 'No such user'
 
 def validate_user(username, password):
     with sqlite3.connect(DB_PATH) as conn:
@@ -91,14 +91,14 @@ def write_cookie(access, refresh, username):
         WHERE username = ?
         ''', (access, refresh, username))
 
-def get_full_user_info(username):
+def get_tokens(username):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
-        for row in cursor:
-            if username == row[1]:
-                return row
-        return 'No such user'
+        cursor.execute('''
+        SELECT access_token, refresh_token FROM users
+        WHERE username = ?
+        ''', (username,))
+        return cursor
 #print(get_full_user_info('ujlojkp'))
 #print(write_user('tomoko_obkuroki', 'gbvyuh'))
 #print(update_user('cat_kuzay', 34, 5, 7,))
