@@ -3,9 +3,13 @@ from hashlib import sha256, sha3_512
 from fastapi import FastAPI
 import os
 import jwt
+import traceback
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "my_database.db")
+
+def hash_string(string: str):
+    return sha256(string.encode('utf-8')).hexdigest()
 
 def write_user(username, password):
     with sqlite3.connect(DB_PATH) as conn:
@@ -91,14 +95,19 @@ def write_cookie(access, refresh, username):
         WHERE username = ?
         ''', (access, refresh, username))
 
-def get_tokens(username):
+def get_tokens(username, access_token, refresh_token):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute('''
         SELECT access_token, refresh_token FROM users
         WHERE username = ?
         ''', (username,))
-        return cursor
-#print(get_full_user_info('ujlojkp'))
-#print(write_user('tomoko_obkuroki', 'gbvyuh'))
-#print(update_user('cat_kuzay', 34, 5, 7,))
+        a = list(cursor)
+        try:
+            if a[0][0] == hash_string(access_token) and a[0][1] == hash_string(refresh_token):
+                return 'SDFGHJK'
+            else:
+                return "asdfgh"
+        except Exception as e:
+            for row in traceback.TracebackException.from_exception(e).format():
+                return False

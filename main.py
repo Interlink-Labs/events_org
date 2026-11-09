@@ -57,7 +57,7 @@ def delete_client(username: str):
 @app.get("/api/v1/set-cookie")
 def set_cookie(username, response: Response):
     value = str(randint(1, 1000000000))
-    access_token = sha256(value.encode('utf-8')).hexdigest()
+    access_token = clients.hash_string(value)
     response.set_cookie(
         key="access_token", 
         value=value, 
@@ -67,7 +67,7 @@ def set_cookie(username, response: Response):
     )
 
     value = str(randint(1, 1000000000))
-    refresh_token = sha256(value.encode('utf-8')).hexdigest()
+    refresh_token = clients.hash_string(value)
     response.set_cookie(
         key="refresh_token", 
         value=value, 
@@ -80,11 +80,5 @@ def set_cookie(username, response: Response):
     return {"message": "Куки успешно установлены!"}
 
 @app.get('/api/v1/check-cookie')
-def check_cookie(username, access_token: str = Cookie(None), refresh_token: str = Cookie(None)):
-    cursor = clients.get_tokens(username)
-    a = list(cursor)
-    user_access_token = a[0][0]
-    user_refresh_token = a[0][1]
-    if user_access_token == access_token and user_refresh_token == refresh_token:
-        return True
-    return access_token, refresh_token, user_access_token, user_refresh_token
+def check_cookie(username, access_token: str = Cookie('1'), refresh_token: str = Cookie('1')):
+    return clients.get_tokens(username, access_token, refresh_token)
