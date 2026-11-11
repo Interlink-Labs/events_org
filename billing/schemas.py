@@ -1,24 +1,7 @@
 from decimal import Decimal
-from enum import Enum
 from pydantic import BaseModel, Field
 
-class EstimateStatus(str, Enum):
-    DRAFT = "draft"           # Черновик (клиент собирает услуги)
-    PENDING = "pending"       # На проверке у менеджера
-    APPROVED = "approved"     # Утверждена
-    PAID = "paid"             # Полностью оплачена
-    CLOSED = "closed"         # Закрыта (мероприятие прошло)
-    CANCELLED = "cancelled"   # Отменена
-
-class ItemType(str, Enum):
-    SERVICE = "service"
-    DISCOUNT = "discount"
-
-class PaymentStatus(str, Enum):
-    PENDING = "pending"
-    CONFIRMED = "confirmed"
-    CANCELLED = "cancelled"
-    REFUNDED = "refunded"     # НОВОЕ: Возврат средств
+from models import EstimateStatus, PaymentStatus, ItemType
 
 class ItemCreate(BaseModel):
     name: str
@@ -39,6 +22,5 @@ class ExpenseCreate(BaseModel):
     name: str
     amount: Decimal = Field(ge=0)
 
-# НОВОЕ: Смена статуса сметы
 class EstimateStatusUpdate(BaseModel):
     status: EstimateStatus
