@@ -109,5 +109,4 @@ def get_tokens(username, access_token, refresh_token):
             else:
                 return "asdfgh"
         except Exception as e:
-            for row in traceback.TracebackException.from_exception(e).format():
-                return False
+            return traceback.TracebackException.from_exception(e).format()
