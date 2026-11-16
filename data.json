@@ -1,0 +1,12 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "fullName": "Главный Разработчик",
+      "email": "arseniy28@gmail.com",
+      "password": "123ars",
+      "role": "developer"
+    }
+  ],
+  "locations": []
+}
