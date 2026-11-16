@@ -1,104 +1,177 @@
-from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional
+import re
 
-from database import engine, get_db, Base
+from database import engine, Base
 import models
+import services_db
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Interlink-Labs API")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+
+# ==================== СМЕТА И ОПЛАТА (модуль billing, без изменений) ====================
 from billing.router import router as billing_router
 app.include_router(billing_router)
 
-class VenueCreate(BaseModel):
-    name: str
-    address: str
-    capacity: int
 
-class ServiceCreate(BaseModel):
+# ==================== УСЛУГИ (модуль services, SQLite: services_db.py) ====================
+PHONE_RE = re.compile(r"^\+?[0-9\s\-()]{5,20}$")
+
+
+def check_phone(v: str) -> str:
+    v = v.strip()
+    if v != services_db.DEFAULT_PHONE and not PHONE_RE.match(v):
+        raise ValueError("Некорректный номер телефона")
+    return v
+
+
+class VenuePackage(BaseModel):
+    name: str = Field(min_length=1)
+    address: str = Field(min_length=1)
+    capacity: int = Field(gt=0)
+
+
+class ServicePackage(BaseModel):
     venue_id: int
-    name: str
+    name: str = Field(min_length=1)
     description: Optional[str] = None
-    price: float = 0.0
-    contact_phone: Optional[str] = "Не указан"
+    price: float = Field(default=0.0, ge=0)
+    contact_phone: str = services_db.DEFAULT_PHONE
 
-class ServiceUpdate(BaseModel):
-    name: str
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
+
+
+class ServiceUpdatePackage(BaseModel):
+    service_id: int
+    name: str = Field(min_length=1)
     description: Optional[str] = None
-    price: float
+    price: float = Field(ge=0)
+    contact_phone: str = services_db.DEFAULT_PHONE
+
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
+
+
+class ServicePhonePackage(BaseModel):
+    service_id: int
     contact_phone: str
 
-class PhoneUpdate(BaseModel):
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
+
+
+class VenuePhonePackage(BaseModel):
+    venue_id: int
     contact_phone: str
 
-@app.post("/api/v1/venues/create")
-def api_create_venue(v: VenueCreate, db: Session = Depends(get_db)):
-    venue = models.Venue(name=v.name, address=v.address, capacity=v.capacity)
-    db.add(venue)
-    db.commit()
-    db.refresh(venue)
-    
-    base_services = [
-        models.Service(venue_id=venue.id, name="Аренда зала", description="Базовая аренда", price=10000.0),
-        models.Service(venue_id=venue.id, name="Уборка", description="Финальная уборка", price=2000.0)
-    ]
-    db.add_all(base_services)
-    db.commit()
-    return {"ok": True, "venue_id": venue.id, "msg": "Локация создана"}
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
 
-@app.get("/api/v1/venues")
-def api_get_venues(db: Session = Depends(get_db)):
-    return db.query(models.Venue).all()
 
-@app.get("/api/v1/manager/services")
-def get_all_services(venue_id: Optional[int] = None, db: Session = Depends(get_db)):
-    query = db.query(models.Service)
-    if venue_id:
-        query = query.filter(models.Service.venue_id == venue_id)
-    return query.all()
+def venue_or_404(venue_id: int):
+    if not services_db.check_venue(venue_id):
+        raise HTTPException(status_code=404, detail="Локация не найдена")
 
-@app.post("/api/v1/manager/services/create")
-def create_service(s: ServiceCreate, db: Session = Depends(get_db)):
-    service = models.Service(venue_id=s.venue_id, name=s.name, description=s.description, price=s.price, contact_phone=s.contact_phone)
-    db.add(service)
-    db.commit()
-    db.refresh(service)
-    return {"ok": True, "service_id": service.id}
 
-@app.post("/api/v1/manager/services/{service_id}/update")
-def update_service(service_id: int, s: ServiceUpdate, db: Session = Depends(get_db)):
-    service = db.query(models.Service).filter(models.Service.id == service_id).first()
-    if not service:
-        raise HTTPException(404, "Услуга не найдена")
-    service.name = s.name
-    service.description = s.description
-    service.price = s.price
-    service.contact_phone = s.contact_phone
-    db.commit()
-    return {"ok": True, "msg": "Услуга обновлена"}
+# ----- локации -----
+@app.post("/api/v1/venues/create", tags=["Услуги"])
+def create_venue(venue: VenuePackage):
+    """Создаёт локацию, базовые услуги добавляются автоматически (п. 13)"""
+    venue_id = services_db.write_venue(venue.name, venue.address, venue.capacity)
+    return {"message": "Локация создана, базовые услуги добавлены", "venue_id": venue_id}
 
-@app.post("/api/v1/manager/services/{service_id}/delete")
-def delete_service(service_id: int, db: Session = Depends(get_db)):
-    service = db.query(models.Service).filter(models.Service.id == service_id).first()
-    if not service:
-        raise HTTPException(404, "Услуга не найдена")
-    db.delete(service)
-    db.commit()
-    return {"ok": True, "msg": "Услуга удалена"}
 
-@app.post("/api/v1/manager/services/{service_id}/phone")
-def set_contact_phone(service_id: int, p: PhoneUpdate, db: Session = Depends(get_db)):
-    service = db.query(models.Service).filter(models.Service.id == service_id).first()
-    if service:
-        service.contact_phone = p.contact_phone
-        db.commit()
-        return {"ok": True, "msg": "Номер обновлен"}
-    return {"ok": False, "msg": "Услуга не найдена"}
+@app.get("/api/v1/venues/list", tags=["Услуги"])
+def list_venues():
+    return services_db.get_venues()
+
+
+# ----- услуги: CRUD (п. 12) -----
+@app.post("/api/v1/services/create", tags=["Услуги"])
+def create_service(service: ServicePackage):
+    venue_or_404(service.venue_id)
+    service_id = services_db.write_service(
+        service.venue_id, service.name, service.description, service.price, service.contact_phone
+    )
+    if service_id is None:
+        raise HTTPException(status_code=409, detail="У этой локации уже есть услуга с таким названием")
+    return {"message": "Услуга создана", "service_id": service_id}
+
+
+@app.post("/api/v1/services/get", tags=["Услуги"])
+def get_service(service_id: int):
+    service = services_db.get_service(service_id)
+    if service is None:
+        raise HTTPException(status_code=404, detail="Услуга не найдена")
+    return service
+
+
+@app.get("/api/v1/services/list", tags=["Услуги"])
+def list_services(venue_id: Optional[int] = None):
+    """Все услуги или услуги одной локации"""
+    if venue_id is not None:
+        venue_or_404(venue_id)
+    return services_db.get_services(venue_id)
+
+
+@app.post("/api/v1/services/update", tags=["Услуги"])
+def update_service(service: ServiceUpdatePackage):
+    result = services_db.update_service(
+        service.service_id, service.name, service.description, service.price, service.contact_phone
+    )
+    if result is None:
+        raise HTTPException(status_code=409, detail="У этой локации уже есть услуга с таким названием")
+    if not result:
+        raise HTTPException(status_code=404, detail="Услуга не найдена")
+    return {"message": "Услуга обновлена", "service": services_db.get_service(service.service_id)}
+
+
+@app.post("/api/v1/services/delete", tags=["Услуги"])
+def delete_service(service_id: int):
+    if services_db.delete_service(service_id):
+        return {"message": "Услуга удалена"}
+    raise HTTPException(status_code=404, detail="Услуга не найдена")
+
+
+# ----- базовые услуги (п. 13) -----
+@app.post("/api/v1/services/base", tags=["Услуги"])
+def add_base_services(venue_id: int):
+    """Вернуть локации базовые услуги, если какие-то из них удалили"""
+    venue_or_404(venue_id)
+    added = services_db.add_base_services(venue_id)
+    return {"message": "Базовые услуги добавлены", "added": added}
+
+
+# ----- телефон ответственного (п. 14) -----
+@app.post("/api/v1/services/phone", tags=["Услуги"])
+def set_service_phone(data: ServicePhonePackage):
+    """Телефон ответственного за одну услугу"""
+    if services_db.update_service_phone(data.service_id, data.contact_phone):
+        return {"message": "Номер телефона обновлён"}
+    raise HTTPException(status_code=404, detail="Услуга не найдена")
+
+
+@app.post("/api/v1/venues/phone", tags=["Услуги"])
+def set_venue_phone(data: VenuePhonePackage):
+    """Привязка к локации номера ответственного лица: ставится всем услугам локации"""
+    venue_or_404(data.venue_id)
+    updated = services_db.update_venue_phone(data.venue_id, data.contact_phone)
+    return {"message": "Номер телефона привязан к локации", "updated": updated}
+
 
 @app.get("/")
 def root():
