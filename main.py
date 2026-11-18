@@ -21,7 +21,7 @@ def reg_client(user: Package):
         password = user.password
         
         if clients.write_user(username, password):
-            return 'пользователь успешно зарегистрирован'
+            return 'пользователь успешно зарегистрирован!'
         else:
             return 'юзернейм занят'
     except Exception as e:
