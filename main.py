@@ -1,9 +1,12 @@
-from fastapi import FastAPI, HTTPException
+import traceback
+from fastapi import FastAPI, HTTPException, Response, Cookie
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 import re
-
+import clients
+from hashlib import sha256
+from random import randint
 from database import engine, Base
 import models
 import services_db
@@ -176,3 +179,10 @@ def set_venue_phone(data: VenuePhonePackage):
 @app.get("/")
 def root():
     return {"message": "API работает. Открой /docs"}
+ 
+
+class Package(BaseModel):
+    username: str
+    password: str
+
+
