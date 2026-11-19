@@ -7,6 +7,7 @@ import events_db
 app = FastAPI(title="Events API")
 
 
+# ==================== СХЕМЫ PYDANTIC ====================
 
 class VenueBase(BaseModel):
     name: str
@@ -65,6 +66,11 @@ class StatusUpdate(BaseModel):
     new_status: str
 
 
+VALID_STATUSES = {"pending", "approved", "rejected", "completed"}
+
+
+# ==================== ЛОКАЦИИ ====================
+
 @app.get("/venues", response_model=List[VenueResponse])
 def list_venues():
     return events_db.get_all_venues()
@@ -95,17 +101,21 @@ def create_venue(venue: VenueCreate):
 
 @app.put("/venues/{venue_id}", response_model=VenueResponse)
 def update_venue(venue_id: int, venue: VenueCreate):
+    if not events_db.get_venue(venue_id):
+        raise HTTPException(status_code=404, detail="Локация не найдена")
     ok = events_db.update_venue(
         venue_id, venue.name, venue.address, venue.capacity,
         venue.description, venue.contact_phone,
     )
     if not ok:
-        raise HTTPException(status_code=404, detail="Локация не найдена")
+        raise HTTPException(status_code=400, detail="Не удалось обновить локацию")
     return events_db.get_venue(venue_id)
 
 
 @app.delete("/venues/{venue_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_venue(venue_id: int):
+    if not events_db.get_venue(venue_id):
+        raise HTTPException(status_code=404, detail="Локация не найдена")
     if not events_db.delete_venue(venue_id):
         raise HTTPException(
             status_code=400,
@@ -113,6 +123,8 @@ def delete_venue(venue_id: int):
         )
     return None
 
+
+# ==================== МЕРОПРИЯТИЯ ====================
 
 @app.post("/events", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 def create_event(event: EventCreate):
@@ -149,21 +161,23 @@ def get_event(event_id: int):
 
 @app.put("/events/{event_id}", response_model=EventResponse)
 def update_event(event_id: int, payload: EventUpdate):
+    if not events_db.get_event(event_id):
+        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+
     data = payload.model_dump(exclude_unset=True)
     if "date" in data:
         data["date"] = str(data["date"])
     if not events_db.update_event(event_id, data):
-        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
+        raise HTTPException(status_code=400, detail="Не удалось обновить мероприятие")
     return events_db.get_event(event_id)
 
 
 @app.put("/events/{event_id}/status")
 def update_event_status(event_id: int, payload: StatusUpdate):
-    valid = {"pending", "approved", "rejected", "completed"}
-    if payload.new_status not in valid:
+    if payload.new_status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
-            detail=f"Допустимые статусы: {sorted(valid)}",
+            detail=f"Допустимые статусы: {sorted(VALID_STATUSES)}",
         )
     if not events_db.update_event_status(event_id, payload.new_status):
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
