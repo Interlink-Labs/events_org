@@ -3,6 +3,7 @@ from hashlib import sha256, sha3_512
 from fastapi import FastAPI
 import os
 import traceback
+import jwt
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "my_database.db")
@@ -136,3 +137,4 @@ def get_tokens(username, access_token, refresh_token):
                 return traceback.TracebackException.from_exception(e).format()
     except Exception as e:
         print(traceback.TracebackException.from_exception(e).format())
+
