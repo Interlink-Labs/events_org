@@ -1,10 +1,12 @@
 import traceback
-from fastapi import FastAPI, HTTPException, Response, Cookie
+from fastapi import FastAPI, HTTPException, Response, Cookie, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
+from fast_jwt import FastJWT
+from datetime import timedelta
 from typing import Optional
 import re
-import clients
+import cllients
 from hashlib import sha256
 from random import randint
 from database import engine, Base
@@ -185,93 +187,83 @@ class Package(BaseModel):
     username: str
     password: str
 
-@app.post("/api/v1/clients/reg")
-def reg_client(user: Package):
+fast_jwt = FastJWT(secret_key="not-secret-key-abcdefghijklmnopqrstuvwxyz")
+
+@app.post("/api/v1/clients/registration")
+def reg_client(user: Package, response: Response):
     try:
         username = user.username
         password = user.password
         
-        if clients.write_user(username, password):
-            return 'пользователь успешно зарегистрирован!'
+        if cllients.write_user(username, password):
+            access_token = fast_jwt.create_access_token(
+                user_id=username, expires_delta=timedelta(minutes=30)
+            )
+            refresh_token = fast_jwt.create_refresh_token(
+                user_id=username, expires_delta=timedelta(minutes=30)
+            )
+
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token,
+                httponly=True,   # Важно для безопасности
+                secure=True,     # Только для HTTPS
+                samesite="lax"   # или "strict"
+            )
+            return {"access_token": access_token}
+
         else:
             return 'юзернейм занят'
     except Exception as e:
-        print(traceback.TracebackException.from_exception(e).format())
+        print(e)
 
-@app.post("/api/v1/clients/sign-in")
+@app.post("/api/v1/clients/login")
 def sign_client(user: Package):
     try:
         username = user.username
         password = user.password
         
-        if clients.validate_user(username, password):
+        if cllients.validate_user(username, password):
             return 'Вы вошли!'
         else:
             return 'Неверный логин или пароль'
     except Exception as e:
         print(traceback.TracebackException.from_exception(e).format())
 
-@app.post("/api/v1/clients/get")
+@app.post("/api/v1/client/get")
 def get_client(username: str):
     try:
-        return clients.get_user(username)
+        return cllients.get_user(username)
     except Exception as e:
         print(traceback.TracebackException.from_exception(e).format())
 
-@app.post("/api/v1/clients/update")
+@app.put("/api/v1/clients/update")
 def update_client(user: Package):
     try:
         username = user.username
         new_password = user.password
         
-        if clients.update_user(username, new_password):
+        if cllients.update_user(username, new_password):
             return 'Данные обновлены!'
         else:
             return 'Пользователь не найден'
     except Exception as e:
         print(traceback.TracebackException.from_exception(e).format())
 
-@app.post("/api/v1/clients/delete")
+@app.delete("/api/v1/clients/delete")
 def delete_client(username: str):
     try:
-        if clients.delete_user(username):
+        if cllients.delete_user(username):
             return 'Пользователь удален'
         else:
             return 'Пользователь не найден'
     except Exception as e:
         print(traceback.TracebackException.from_exception(e).format())
 
-@app.get("/api/v1/set-cookie")
-def set_cookie(username, response: Response):
-    try:
-        value = str(randint(1, 1000000000))
-        access_token = clients.hash_string(value)
-        response.set_cookie(
-            key="access_token", 
-            value=value, 
-            httponly=True,
-            max_age=900,
-            samesite="lax"
-        )
+@app.post("/api/v1/refresh")
+def refresh(new_tokens: dict = Depends(fast_jwt.refresh_token)):
+    return new_tokens
 
-        value = str(randint(1, 1000000000))
-        refresh_token = clients.hash_string(value)
-        response.set_cookie(
-            key="refresh_token", 
-            value=value, 
-            httponly=True,
-            max_age=86400,
-            samesite="lax"
-        )
-
-        clients.write_cookie(access_token, refresh_token, username)
-        return {"message": "Куки успешно установлены!"}
-    except Exception as e:
-        print(traceback.TracebackException.from_exception(e).format())
-
-@app.get('/api/v1/check-cookie')
-def check_cookie(username, access_token: str = Cookie('1'), refresh_token: str = Cookie('1')):
-    try:
-        return clients.get_tokens(username, access_token, refresh_token)
-    except Exception as e:
-        print(traceback.TracebackException.from_exception(e).format())
+@app.get("/protected", dependencies=[Depends(fast_jwt.auth_required)])
+def protected_route():
+    return {"message": "Доступ разрешён"}
