@@ -2,6 +2,17 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from database import engine, Base
+from auth.security import get_current_user
+
+client = TestClient(app)
+
+app.dependency_overrides[get_current_user] = lambda: {"email": "test@test.ru", "role": "manager"}
+
+@pytest.fixture(autouse=True)
+def clear_databases():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    yield
 
 client = TestClient(app)
 

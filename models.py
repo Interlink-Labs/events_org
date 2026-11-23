@@ -84,3 +84,12 @@ class PaymentLog(Base):
     action = Column(String)
     old_status = Column(String)
     new_status = Column(String)
+
+# --- МОДЕЛЬ ПОЛЬЗОВАТЕЛЯ ---
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    fio = Column(String)
+    email = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    role = Column(String, default="client") # Роли: "client", "manager"

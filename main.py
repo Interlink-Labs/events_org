@@ -3,9 +3,27 @@ from pydantic import BaseModel
 from typing import Optional
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import asc, desc
 
 from database import engine, get_db, Base
 import models
+
+from auth.security import get_current_user
+
+# Защищаем создание локации (только для авторизованных)
+@app.post("/api/v1/venues/create")
+def api_create_venue(v: VenueCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # ... (код функции без изменений)
+
+# Защищаем просмотр услуг менеджера
+@app.get("/api/v1/manager/services")
+def get_all_services(
+    venue_id: Optional[int] = None,
+    sort_by: str = "id",     
+    order: str = "asc",
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user) # <--- ДОБАВЛЕНО
+):
 
 Base.metadata.create_all(bind=engine)
 
@@ -51,17 +69,62 @@ def api_create_venue(v: VenueCreate, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True, "venue_id": venue.id, "msg": "Локация создана"}
 
+# ==================== ОБНОВЛЕННЫЙ GET ДЛЯ ЛОКАЦИЙ ====================
 @app.get("/api/v1/venues")
-def api_get_venues(db: Session = Depends(get_db)):
-    return db.query(models.Venue).all()
-
-@app.get("/api/v1/manager/services")
-def get_all_services(venue_id: Optional[int] = None, db: Session = Depends(get_db)):
-    query = db.query(models.Service)
-    if venue_id:
-        query = query.filter(models.Service.venue_id == venue_id)
+def api_get_venues(
+    sort_by: str = "id",     # По какому полю сортировать
+    order: str = "asc",      # Направление: asc (по возрастанию) или desc (по убыванию)
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Venue)
+    
+    # Словарь разрешенных полей для сортировки (защита от SQL-инъекций)
+    allowed_columns = {
+        "id": models.Venue.id,
+        "name": models.Venue.name,           # Алфавитная сортировка
+        "capacity": models.Venue.capacity    # Числовая сортировка (вместимость)
+    }
+    
+    # Берем колонку по имени, если нет такой — сортируем по id по умолчанию
+    column = allowed_columns.get(sort_by, models.Venue.id)
+    
+    # Применяем направление
+    if order.lower() == "desc":
+        query = query.order_by(desc(column))
+    else:
+        query = query.order_by(asc(column))
+        
     return query.all()
 
+# ==================== ОБНОВЛЕННЫЙ GET ДЛЯ УСЛУГ ====================
+@app.get("/api/v1/manager/services")
+def get_all_services(
+    venue_id: Optional[int] = None,
+    sort_by: str = "id",     # По какому полю сортировать
+    order: str = "asc",      # Направление: asc или desc
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Service)
+    
+    if venue_id:
+        query = query.filter(models.Service.venue_id == venue_id)
+        
+    allowed_columns = {
+        "id": models.Service.id,
+        "name": models.Service.name,         # Алфавитная сортировка
+        "price": models.Service.price        # Числовая сортировка (цена)
+    }
+    
+    column = allowed_columns.get(sort_by, models.Service.id)
+    
+    if order.lower() == "desc":
+        query = query.order_by(desc(column))
+    else:
+        query = query.order_by(asc(column))
+        
+    return query.all()
+
+# ==================== ОСТАЛЬНЫЕ ЭНДПОИНТЫ ====================
 @app.post("/api/v1/manager/services/create")
 def create_service(s: ServiceCreate, db: Session = Depends(get_db)):
     service = models.Service(venue_id=s.venue_id, name=s.name, description=s.description, price=s.price, contact_phone=s.contact_phone)
