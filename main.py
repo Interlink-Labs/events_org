@@ -7,32 +7,21 @@ from sqlalchemy import asc, desc
 
 from database import engine, get_db, Base
 import models
+from auth.security import get_current_user # Импортируем защиту
 
-from auth.security import get_current_user
-
-# Защищаем создание локации (только для авторизованных)
-@app.post("/api/v1/venues/create")
-def api_create_venue(v: VenueCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    # ... (код функции без изменений)
-
-# Защищаем просмотр услуг менеджера
-@app.get("/api/v1/manager/services")
-def get_all_services(
-    venue_id: Optional[int] = None,
-    sort_by: str = "id",     
-    order: str = "asc",
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user) # <--- ДОБАВЛЕНО
-):
-
+# 1. Сначала инициализируем БД и приложение
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Interlink-Labs API")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# 2. Подключаем роутеры
 from billing.router import router as billing_router
+from auth.router import router as auth_router
 app.include_router(billing_router)
+app.include_router(auth_router)
 
+# 3. Модели данных (Pydantic)
 class VenueCreate(BaseModel):
     name: str
     address: str
@@ -54,8 +43,10 @@ class ServiceUpdate(BaseModel):
 class PhoneUpdate(BaseModel):
     contact_phone: str
 
+# ==================== ЭНДПОИНТЫ ====================
+
 @app.post("/api/v1/venues/create")
-def api_create_venue(v: VenueCreate, db: Session = Depends(get_db)):
+def api_create_venue(v: VenueCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     venue = models.Venue(name=v.name, address=v.address, capacity=v.capacity)
     db.add(venue)
     db.commit()
@@ -69,26 +60,22 @@ def api_create_venue(v: VenueCreate, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True, "venue_id": venue.id, "msg": "Локация создана"}
 
-# ==================== ОБНОВЛЕННЫЙ GET ДЛЯ ЛОКАЦИЙ ====================
 @app.get("/api/v1/venues")
 def api_get_venues(
-    sort_by: str = "id",     # По какому полю сортировать
-    order: str = "asc",      # Направление: asc (по возрастанию) или desc (по убыванию)
+    sort_by: str = "id",
+    order: str = "asc",
     db: Session = Depends(get_db)
 ):
     query = db.query(models.Venue)
     
-    # Словарь разрешенных полей для сортировки (защита от SQL-инъекций)
     allowed_columns = {
         "id": models.Venue.id,
-        "name": models.Venue.name,           # Алфавитная сортировка
-        "capacity": models.Venue.capacity    # Числовая сортировка (вместимость)
+        "name": models.Venue.name,
+        "capacity": models.Venue.capacity
     }
     
-    # Берем колонку по имени, если нет такой — сортируем по id по умолчанию
     column = allowed_columns.get(sort_by, models.Venue.id)
     
-    # Применяем направление
     if order.lower() == "desc":
         query = query.order_by(desc(column))
     else:
@@ -96,13 +83,13 @@ def api_get_venues(
         
     return query.all()
 
-# ==================== ОБНОВЛЕННЫЙ GET ДЛЯ УСЛУГ ====================
 @app.get("/api/v1/manager/services")
 def get_all_services(
     venue_id: Optional[int] = None,
-    sort_by: str = "id",     # По какому полю сортировать
-    order: str = "asc",      # Направление: asc или desc
-    db: Session = Depends(get_db)
+    sort_by: str = "id",
+    order: str = "asc",
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user) # Защищено токеном
 ):
     query = db.query(models.Service)
     
@@ -111,8 +98,8 @@ def get_all_services(
         
     allowed_columns = {
         "id": models.Service.id,
-        "name": models.Service.name,         # Алфавитная сортировка
-        "price": models.Service.price        # Числовая сортировка (цена)
+        "name": models.Service.name,
+        "price": models.Service.price
     }
     
     column = allowed_columns.get(sort_by, models.Service.id)
@@ -124,9 +111,8 @@ def get_all_services(
         
     return query.all()
 
-# ==================== ОСТАЛЬНЫЕ ЭНДПОИНТЫ ====================
 @app.post("/api/v1/manager/services/create")
-def create_service(s: ServiceCreate, db: Session = Depends(get_db)):
+def create_service(s: ServiceCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     service = models.Service(venue_id=s.venue_id, name=s.name, description=s.description, price=s.price, contact_phone=s.contact_phone)
     db.add(service)
     db.commit()
@@ -134,7 +120,7 @@ def create_service(s: ServiceCreate, db: Session = Depends(get_db)):
     return {"ok": True, "service_id": service.id}
 
 @app.post("/api/v1/manager/services/{service_id}/update")
-def update_service(service_id: int, s: ServiceUpdate, db: Session = Depends(get_db)):
+def update_service(service_id: int, s: ServiceUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     service = db.query(models.Service).filter(models.Service.id == service_id).first()
     if not service:
         raise HTTPException(404, "Услуга не найдена")
@@ -146,7 +132,7 @@ def update_service(service_id: int, s: ServiceUpdate, db: Session = Depends(get_
     return {"ok": True, "msg": "Услуга обновлена"}
 
 @app.post("/api/v1/manager/services/{service_id}/delete")
-def delete_service(service_id: int, db: Session = Depends(get_db)):
+def delete_service(service_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     service = db.query(models.Service).filter(models.Service.id == service_id).first()
     if not service:
         raise HTTPException(404, "Услуга не найдена")
@@ -155,7 +141,7 @@ def delete_service(service_id: int, db: Session = Depends(get_db)):
     return {"ok": True, "msg": "Услуга удалена"}
 
 @app.post("/api/v1/manager/services/{service_id}/phone")
-def set_contact_phone(service_id: int, p: PhoneUpdate, db: Session = Depends(get_db)):
+def set_contact_phone(service_id: int, p: PhoneUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     service = db.query(models.Service).filter(models.Service.id == service_id).first()
     if service:
         service.contact_phone = p.contact_phone
