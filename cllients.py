@@ -3,7 +3,7 @@ from hashlib import sha256, sha3_512
 from fastapi import FastAPI
 import os
 import traceback
-import jwt
+#import jwt
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "my_database.db")
@@ -138,3 +138,17 @@ def get_tokens(username, access_token, refresh_token):
     except Exception as e:
         print(traceback.TracebackException.from_exception(e).format())
 
+def get_users_by_half(half_username):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            SELECT * FROM users
+            ''')
+            for row in cursor:
+                if row[1][:len(half_username)] == half_username:
+                    return row
+    except Exception as e:
+        te = traceback.TracebackException.from_exception(e)
+        for line in te.format_exception_only():
+            print(line, end='')

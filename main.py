@@ -11,7 +11,7 @@ from random import randint
 from database import engine, Base
 import models
 import services_db
-import events_db  
+import events_db
 
 Base.metadata.create_all(bind=engine)
 
@@ -237,6 +237,10 @@ def refresh(new_tokens: dict = Depends(fast_jwt.refresh_token)):
 @app.get("/protected", dependencies=[Depends(fast_jwt.auth_required)])
 def protected_route():
     return {"message": "Доступ разрешён"}
+
+@app.get("/api/v1/clients/get_by_half")
+def get_clients(half_username: str):
+    cllients.get_users_by_half(half_username)
 
 # ==================== МОДУЛЬ МЕРОПРИЯТИЙ ====================
 
