@@ -2,24 +2,17 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from database import engine, Base
-from auth.security import get_current_user
-
-client = TestClient(app)
-
-app.dependency_overrides[get_current_user] = lambda: {"email": "test@test.ru", "role": "manager"}
-
-@pytest.fixture(autouse=True)
-def clear_databases():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    yield
 
 client = TestClient(app)
 
 @pytest.fixture(autouse=True)
-def clear_databases():
+def clear_databases(tmp_path):
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    # модуль услуг работает со своей SQLite-базой: на время теста - чистая временная
+    import services_db
+    services_db.DB_PATH = str(tmp_path / "services_test.db")
+    services_db.init_db()
     yield
 
 def test_create_venue_and_base_services():
@@ -27,17 +20,30 @@ def test_create_venue_and_base_services():
     assert response.status_code == 200
     assert response.json()["venue_id"] == 1
 
-    services = client.get("/api/v1/manager/services").json()
-    assert len(services) == 2
-    assert services[0]["name"] == "Аренда зала"
+    services = client.get("/api/v1/services/list", params={"venue_id": 1}).json()
+    assert len(services) == 6
+    assert all(s["is_base"] for s in services)
 
 def test_update_service_phone():
     client.post("/api/v1/venues/create", json={"name": "Зал", "address": "ул. Мира", "capacity": 100})
-    response = client.post("/api/v1/manager/services/1/phone", json={"contact_phone": "+7 999 111-22-33"})
+    response = client.post("/api/v1/services/phone", json={"service_id": 1, "contact_phone": "+7 999 111-22-33"})
     assert response.status_code == 200
-    
-    services = client.get("/api/v1/manager/services").json()
+
+    services = client.get("/api/v1/services/list").json()
     assert services[0]["contact_phone"] == "+7 999 111-22-33"
+
+def test_service_crud():
+    client.post("/api/v1/venues/create", json={"name": "Зал", "address": "ул. Мира", "capacity": 100})
+    res = client.post("/api/v1/services/create", json={"venue_id": 1, "name": "Диджей", "price": 15000})
+    assert res.status_code == 200
+    service_id = res.json()["service_id"]
+    assert client.post("/api/v1/services/create", json={"venue_id": 1, "name": "Диджей"}).status_code == 409
+
+    res = client.post("/api/v1/services/update", json={"service_id": service_id, "name": "Диджей", "price": 20000})
+    assert res.json()["service"]["price"] == 20000
+
+    assert client.post("/api/v1/services/delete", params={"service_id": service_id}).status_code == 200
+    assert client.post("/api/v1/services/get", params={"service_id": service_id}).status_code == 404
 
 def test_full_billing_flow():
     event_id = 10
