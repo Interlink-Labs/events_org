@@ -1,16 +1,270 @@
+import traceback
+from fastapi import FastAPI, HTTPException, Response, Cookie, status, Depends
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, field_validator
+from fast_jwt import FastJWT
+from typing import Optional, List
+from datetime import date, datetime, timedelta
+import re
+import cllients
+from hashlib import sha256
+from random import randint
+from database import engine, Base
+import models
+import services_db
+import events_db
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Interlink-Labs API")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ==================== СМЕТА И ОПЛАТА (модуль billing) ====================
+from billing.router import router as billing_router
+app.include_router(billing_router)
+
+
+# ==================== УСЛУГИ (модуль services) ====================
+PHONE_RE = re.compile(r"^\+?[0-9\s\-()]{5,20}$")
+
+def check_phone(v: str) -> str:
+    v = v.strip()
+    if v != services_db.DEFAULT_PHONE and not PHONE_RE.match(v):
+        raise ValueError("Некорректный номер телефона")
+    return v
+
+class VenuePackage(BaseModel):
+    name: str = Field(min_length=1)
+    address: str = Field(min_length=1)
+    capacity: int = Field(gt=0)
+
+class ServicePackage(BaseModel):
+    venue_id: int
+    name: str = Field(min_length=1)
+    description: Optional[str] = None
+    price: float = Field(default=0.0, ge=0)
+    contact_phone: str = services_db.DEFAULT_PHONE
+
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
+
+class ServiceUpdatePackage(BaseModel):
+    service_id: int
+    name: str = Field(min_length=1)
+    description: Optional[str] = None
+    price: float = Field(ge=0)
+    contact_phone: str = services_db.DEFAULT_PHONE
+
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
+
+class ServicePhonePackage(BaseModel):
+    service_id: int
+    contact_phone: str
+
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
+
+class VenuePhonePackage(BaseModel):
+    venue_id: int
+    contact_phone: str
+
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_phone(cls, v):
+        return check_phone(v)
+
+def venue_or_404(venue_id: int):
+    if not services_db.check_venue(venue_id):
+        raise HTTPException(status_code=404, detail="Локация не найдена")
+
+@app.post("/api/v1/venues/create", tags=["Услуги"])
+def create_venue_service(venue: VenuePackage):
+    venue_id = services_db.write_venue(venue.name, venue.address, venue.capacity)
+    return {"message": "Локация создана, базовые услуги добавлены", "venue_id": venue_id}
+
+@app.get("/api/v1/venues/list", tags=["Услуги"])
+def list_venues_service():
+    return services_db.get_venues()
+
+@app.post("/api/v1/services/create", tags=["Услуги"])
+def create_service(service: ServicePackage):
+    venue_or_404(service.venue_id)
+    service_id = services_db.write_service(
+        service.venue_id, service.name, service.description, service.price, service.contact_phone
+    )
+    if service_id is None:
+        raise HTTPException(status_code=409, detail="У этой локации уже есть услуга с таким названием")
+    return {"message": "Услуга создана", "service_id": service_id}
+
+@app.post("/api/v1/services/get", tags=["Услуги"])
+def get_service(service_id: int):
+    service = services_db.get_service(service_id)
+    if service is None:
+        raise HTTPException(status_code=404, detail="Услуга не найдена")
+    return service
+
+@app.get("/api/v1/services/list", tags=["Услуги"])
+def list_services(venue_id: Optional[int] = None):
+    if venue_id is not None:
+        venue_or_404(venue_id)
+    return services_db.get_services(venue_id)
+
+@app.post("/api/v1/services/update", tags=["Услуги"])
+def update_service(service: ServiceUpdatePackage):
+    result = services_db.update_service(
+        service.service_id, service.name, service.description, service.price, service.contact_phone
+    )
+    if result is None:
+        raise HTTPException(status_code=409, detail="У этой локации уже есть услуга с таким названием")
+    if not result:
+        raise HTTPException(status_code=404, detail="Услуга не найдена")
+    return {"message": "Услуга обновлена", "service": services_db.get_service(service.service_id)}
+
+@app.post("/api/v1/services/delete", tags=["Услуги"])
+def delete_service(service_id: int):
+    if services_db.delete_service(service_id):
+        return {"message": "Услуга удалена"}
+    raise HTTPException(status_code=404, detail="Услуга не найдена")
+
+@app.post("/api/v1/services/base", tags=["Услуги"])
+def add_base_services(venue_id: int):
+    venue_or_404(venue_id)
+    added = services_db.add_base_services(venue_id)
+    return {"message": "Базовые услуги добавлены", "added": added}
+
+@app.post("/api/v1/services/phone", tags=["Услуги"])
+def set_service_phone(data: ServicePhonePackage):
+    if services_db.update_service_phone(data.service_id, data.contact_phone):
+        return {"message": "Номер телефона обновлён"}
+    raise HTTPException(status_code=404, detail="Услуга не найдена")
+
+@app.post("/api/v1/venues/phone", tags=["Услуги"])
+def set_venue_phone(data: VenuePhonePackage):
+    venue_or_404(data.venue_id)
+    updated = services_db.update_venue_phone(data.venue_id, data.contact_phone)
+    return {"message": "Номер телефона привязан к локации", "updated": updated}
+
+
+#=========================== Модуль клиентов ============================
+class Package(BaseModel):
+    username: str
+    password: str
+
+fast_jwt = FastJWT(secret_key="not-secret-key-abcdefghijklmnopqrstuvwxyz")
+
+@app.post("/api/v1/clients/registration")
+def reg_client(user: Package, response: Response):
+    try:
+        username = user.username
+        password = user.password
+        
+        if cllients.write_user(username, password):
+            access_token = fast_jwt.create_access_token(
+                user_id=username, expires_delta=timedelta(minutes=30)
+            )
+            refresh_token = fast_jwt.create_refresh_token(
+                user_id=username, expires_delta=timedelta(minutes=30)
+            )
+
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token,
+                httponly=True,   # Важно для безопасности
+                secure=True,     # Только для HTTPS
+                samesite="lax"   # или "strict"
+            )
+            return {"access_token": access_token}
+
+        else:
+            return 'юзернейм занят'
+    except Exception as e:
+        print(e)
+
+@app.post("/api/v1/clients/login")
+def sign_client(user: Package):
+    try:
+        username = user.username
+        password = user.password
+        
+        if cllients.validate_user(username, password):
+            return 'Вы вошли!'
+        else:
+            return 'Неверный логин или пароль'
+    except Exception as e:
+        print(traceback.TracebackException.from_exception(e).format())
+
+@app.post("/api/v1/client/get")
+def get_client(username: str):
+    try:
+        return cllients.get_user(username)
+    except Exception as e:
+        print(traceback.TracebackException.from_exception(e).format())
+
+@app.put("/api/v1/clients/update")
+def update_client(user: Package):
+    try:
+        username = user.username
+        new_password = user.password
+        
+        if cllients.update_user(username, new_password):
+            return 'Данные обновлены!'
+        else:
+            return 'Пользователь не найден'
+    except Exception as e:
+        print(traceback.TracebackException.from_exception(e).format())
+
+@app.delete("/api/v1/clients/delete")
+def delete_client(username: str):
+    try:
+        if cllients.delete_user(username):
+            return 'Пользователь удален'
+        else:
+            return 'Пользователь не найден'
+    except Exception as e:
+        print(traceback.TracebackException.from_exception(e).format())
+
+@app.post("/api/v1/refresh")
+def refresh(new_tokens: dict = Depends(fast_jwt.refresh_token)):
+    return new_tokens
+
+@app.get("/protected", dependencies=[Depends(fast_jwt.auth_required)])
+def protected_route():
+    return {"message": "Доступ разрешён"}
+
+@app.get("/api/v1/clients/get_by_half")
+def get_clients(half_username: str):
+    cllients.get_users_by_half(half_username)
+
 # ==================== МОДУЛЬ МЕРОПРИЯТИЙ ====================
 from typing import Literal, Union
 from fastapi.security import OAuth2PasswordBearer
 
+
+# ######################################################################
+# ======= ДОБАВЛЕНО: АВТОРИЗАЦИЯ (JWT) — НАЧАЛО =======
+# Модуль мероприятий НЕ проверяет токен сам, а обращается к основному
+# модулю авторизации auth/security.py (get_current_user).
+# Из токена берутся: sub (email пользователя) и role.
+# ######################################################################
 from auth.security import get_current_user as auth_get_current_user
 
 MANAGER_ROLES = {"manager", "admin"}
 
+# Тот же адрес выдачи токена, что и в auth/security.py, но без автоошибки —
+# нужно для эндпоинтов, где токен необязателен (телефон локации скрывается)
 events_optional_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 class CurrentUser(BaseModel):
-    id: str           
+    id: str            # sub из токена (email)
     role: str = "client"
 
     @property
@@ -61,6 +315,10 @@ def _hide_phone(venue: dict, user: Optional[CurrentUser]) -> dict:
 
 def _sort_venues(venues: list, sort_by: str, order: str) -> list:
     return sorted(venues, key=lambda v: v[sort_by], reverse=(order == "desc"))
+# ######################################################################
+# ======= ДОБАВЛЕНО: АВТОРИЗАЦИЯ (JWT) — КОНЕЦ =======
+# ######################################################################
+
 
 # ==================== СХЕМЫ ====================
 SortOrder = Literal["asc", "desc"]                                                        # [JWT] сортировка
@@ -142,6 +400,7 @@ VALID_STATUSES = {"pending", "approved", "rejected", "completed", "cancelled"}  
 
 
 # ==================== ЛОКАЦИИ ====================
+# [JWT] изменено: без токена телефон скрыт + сортировка
 @app.get("/api/v1/venues", response_model=List[VenueResponse], tags=["Мероприятия"])
 def list_events_venues(sort_by: VenueSortField = "id", order: SortOrder = "asc",
                        user: Optional[CurrentUser] = Depends(events_optional_user)):
@@ -359,3 +618,6 @@ def delete_event(event_id: int, user: CurrentUser = Depends(events_require_manag
         raise HTTPException(status_code=404, detail="Мероприятие не найдено")
     return None
 
+@app.get("/")
+def root():
+    return {"message": "API работает. Открой /docs"}
