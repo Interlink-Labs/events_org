@@ -8,6 +8,7 @@ DB_PATH = os.path.join(BASE_DIR, "my_database.db")
 
 # Статусы, при которых бронь считается активной (блокирует локацию)
 ACTIVE_STATUSES = ("pending", "approved")
+CANCELLED_STATUS = "cancelled"
 
 
 # ==================== ИНИЦИАЛИЗАЦИЯ ====================
@@ -183,6 +184,55 @@ def delete_venue(venue_id):
         return True
 
 
+# ==================== ДОСТУПНОСТЬ ЛОКАЦИИ ====================
+def get_busy_slots(location_id, date_str, exclude_event_id=None):
+    """Активные брони локации на дату (без данных клиентов)."""
+    query = '''
+        SELECT id, time_start, time_end, status FROM events
+        WHERE location_id = ? AND date = ? AND status IN (?, ?)
+    '''
+    params = [location_id, date_str, *ACTIVE_STATUSES]
+    if exclude_event_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_event_id)
+    query += " ORDER BY time_start"
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(query, params)
+        return [{"event_id": r[0], "time_start": r[1], "time_end": r[2], "status": r[3]}
+                for r in cur.fetchall()]
+
+
+def is_venue_free(location_id, date_str, time_start, time_end, exclude_event_id=None) -> bool:
+    """Свободна ли локация в интервале [time_start, time_end) на дату."""
+    for slot in get_busy_slots(location_id, date_str, exclude_event_id):
+        if _times_overlap(time_start, time_end, slot["time_start"], slot["time_end"]):
+            return False
+    return True
+
+
+def check_event_slot(location_id, date_str, time_start, time_end, participants,
+                     exclude_event_id=None):
+    """
+    Общая проверка брони: локация есть, время корректно, вместимость
+    достаточна, интервал не пересекается с активными бронями.
+    Возвращает (ok: bool, error: str|None).
+    """
+    venue = get_venue(location_id)
+    if not venue:
+        return False, "Локация не найдена"
+    try:
+        if _time_to_minutes(time_start) >= _time_to_minutes(time_end):
+            return False, "Время окончания должно быть позже времени начала"
+    except (ValueError, AttributeError):
+        return False, "Время должно быть в формате HH:MM"
+    if venue["capacity"] < participants:
+        return False, "Вместимость локации меньше числа участников"
+    if not is_venue_free(location_id, date_str, time_start, time_end, exclude_event_id):
+        return False, "Локация занята в это время"
+    return True, None
+
+
 # ==================== МЕРОПРИЯТИЯ ====================
 def create_event(client_id, location_id, event_type, date_str, time_start,
                  time_end, participants, total_amount, comment="",
@@ -195,24 +245,12 @@ def create_event(client_id, location_id, event_type, date_str, time_start,
     services = services or []
     service_configs = service_configs or {}
 
-    # Проверка локации
-    venue = get_venue(location_id)
-    if not venue:
-        return False, "Локация не найдена"
-    if venue["capacity"] < participants:
-        return False, "Вместимость локации меньше числа участников"
+    ok, err = check_event_slot(location_id, date_str, time_start, time_end, participants)
+    if not ok:
+        return False, err
 
-    # Проверка пересечения по времени с активными бронями
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
-        cur.execute('''
-            SELECT time_start, time_end FROM events
-            WHERE location_id = ? AND date = ? AND status IN (?, ?)
-        ''', (location_id, date_str, *ACTIVE_STATUSES))
-        for (s2, e2) in cur.fetchall():
-            if _times_overlap(time_start, time_end, s2, e2):
-                return False, "Локация занята в это время"
-
         cur.execute('''
             INSERT INTO events
             (client_id, location_id, event_type, date, time_start, time_end,
@@ -235,7 +273,11 @@ def get_event(event_id):
         return _row_to_event(cur.fetchone())
 
 
-def get_events(client_id=None, status_filter=None):
+# Поля, по которым разрешена сортировка (белый список — защита от SQL-инъекций)
+EVENT_SORT_FIELDS = ("id", "date", "created_at", "participants", "total_amount", "status")
+
+
+def get_events(client_id=None, status_filter=None, sort_by="id", order="asc"):
     query = EVENT_SELECT
     clauses, params = [], []
     if client_id is not None:
@@ -246,6 +288,13 @@ def get_events(client_id=None, status_filter=None):
         params.append(status_filter)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
+
+    if sort_by not in EVENT_SORT_FIELDS:
+        sort_by = "id"
+    direction = "DESC" if str(order).lower() == "desc" else "ASC"
+    query += f" ORDER BY {sort_by} {direction}"
+    if sort_by == "date":
+        query += f", time_start {direction}"
 
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
@@ -288,6 +337,21 @@ def update_event_status(event_id, new_status):
         cur = conn.cursor()
         cur.execute('UPDATE events SET status = ? WHERE id = ?', (new_status, event_id))
         return cur.rowcount > 0
+
+
+def cancel_event(event_id):
+    """
+    Отмена мероприятия: статус -> cancelled. Бронь площадки снимается
+    автоматически, т.к. cancelled не входит в ACTIVE_STATUSES.
+    Возвращает (ok: bool, error: str|None).
+    """
+    event = get_event(event_id)
+    if not event:
+        return False, "Мероприятие не найдено"
+    if event["status"] not in ACTIVE_STATUSES:
+        return False, f"Нельзя отменить мероприятие в статусе '{event['status']}'"
+    update_event_status(event_id, CANCELLED_STATUS)
+    return True, None
 
 
 def delete_event(event_id):
