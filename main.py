@@ -1,7 +1,8 @@
 import traceback
-from fastapi import FastAPI, HTTPException, Response, Cookie, status
+from fastapi import FastAPI, HTTPException, Response, Cookie, status, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
+from fast_jwt import FastJWT
 from typing import Optional, List
 from datetime import date, datetime, timedelta
 import re
@@ -382,4 +383,3 @@ def delete_event(event_id: int):
 @app.get("/")
 def root():
     return {"message": "API работает. Открой /docs"}
-
