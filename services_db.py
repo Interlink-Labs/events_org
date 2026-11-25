@@ -54,6 +54,12 @@ def init_db():
                     UNIQUE (venue_id, name)
                 )
             ''')
+
+            # [JWT] Включение/выключение услуги без удаления.
+            # Для уже существующей базы колонку добавляем миграцией.
+            columns = [row["name"] for row in cursor.execute("PRAGMA table_info(services)")]
+            if "is_active" not in columns:
+                cursor.execute("ALTER TABLE services ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
         conn.close()
     except Exception as e:
         print(traceback.TracebackException.from_exception(e).format())
@@ -68,6 +74,7 @@ def service_to_dict(row):
         "price": row["price"],
         "contact_phone": row["contact_phone"],
         "is_base": bool(row["is_base"]),
+        "is_active": bool(row["is_active"]) if "is_active" in row.keys() else True,
     }
 
 
@@ -159,17 +166,57 @@ def get_service(service_id):
         conn.close()
 
 
-def get_services(venue_id=None):
+# [JWT] Поля сортировки — белый список (защита от SQL-инъекций)
+SERVICE_SORT_FIELDS = ("id", "name", "price", "venue_id")
+
+
+def get_services(venue_id=None, only_active=False, is_base=None, min_price=None,
+                 max_price=None, search=None, sort_by=None, order="asc"):
+    """
+    Список услуг с фильтрами и сортировкой.
+    Без параметров работает как раньше: все услуги, по venue_id и id.
+    """
+    clauses, params = [], []
+    if venue_id is not None:
+        clauses.append("venue_id = ?")
+        params.append(venue_id)
+    if only_active:
+        clauses.append("is_active = 1")
+    if is_base is not None:
+        clauses.append("is_base = ?")
+        params.append(1 if is_base else 0)
+    if min_price is not None:
+        clauses.append("price >= ?")
+        params.append(min_price)
+    if max_price is not None:
+        clauses.append("price <= ?")
+        params.append(max_price)
+
+    query = "SELECT * FROM services"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+
+    direction = "DESC" if str(order).lower() == "desc" else "ASC"
+    if sort_by in SERVICE_SORT_FIELDS:
+        query += f" ORDER BY {sort_by} {direction}, id"
+    elif venue_id is not None:
+        query += " ORDER BY id"
+    else:
+        query += " ORDER BY venue_id, id"
+
     conn = connect()
     try:
         cursor = conn.cursor()
-        if venue_id is not None:
-            cursor.execute('SELECT * FROM services WHERE venue_id = ? ORDER BY id', (venue_id,))
-        else:
-            cursor.execute('SELECT * FROM services ORDER BY venue_id, id')
-        return [service_to_dict(row) for row in cursor.fetchall()]
+        cursor.execute(query, params)
+        services = [service_to_dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
+
+    # Поиск по названию делаем в Python: LOWER() в SQLite не понимает кириллицу
+    if search:
+        needle = search.strip().casefold()
+        services = [s for s in services if needle in s["name"].casefold()]
+    return services
 
 
 def update_service(service_id, name, description, price, contact_phone):
@@ -197,6 +244,29 @@ def delete_service(service_id):
             cursor = conn.cursor()
             cursor.execute('DELETE FROM services WHERE id = ?', (service_id,))
             return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+# [JWT] ==================== ВКЛЮЧИТЬ / ВЫКЛЮЧИТЬ УСЛУГУ ====================
+def set_service_active(service_id, active=None):
+    """
+    Включает/выключает услугу без удаления.
+    active=None — переключить на противоположное.
+    Возвращает новое состояние (True/False) или None, если услуги нет.
+    """
+    conn = connect()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT is_active FROM services WHERE id = ?', (service_id,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            new_state = (not bool(row["is_active"])) if active is None else bool(active)
+            cursor.execute('UPDATE services SET is_active = ? WHERE id = ?',
+                           (1 if new_state else 0, service_id))
+            return new_state
     finally:
         conn.close()
 
