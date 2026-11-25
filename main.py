@@ -1,11 +1,4 @@
-# ==================== УСЛУГИ (модуль services) ====================
-# Работает так же, как /venues в модуле мероприятий:
-#   GET    /api/v1/services          — все услуги
-#   GET    /api/v1/services/{id}     — одна услуга
-#   POST   /api/v1/services          — создать (можно с пустым body)
-#   PUT    /api/v1/services/{id}     — изменить
-#   DELETE /api/v1/services/{id}     — удалить
-
+#--------------МОДУЛЬ УСЛУГ--------------------#
 PHONE_RE = re.compile(r"^\+?[0-9\s\-()]{5,20}$")
 
 def check_phone(v: str) -> str:
@@ -14,7 +7,7 @@ def check_phone(v: str) -> str:
         raise ValueError("Некорректный номер телефона")
     return v
 
-# Готовые услуги: если в body нет name, берётся первая, которой ещё нет
+
 PRESET_SERVICES = [
     ("Кейтеринг", "Фуршет или банкет под ключ", 1500.0),
     ("Звуковое оборудование", "Колонки, микрофоны, пульт", 8000.0),
@@ -30,9 +23,6 @@ PRESET_SERVICES = [
     ("Уборка после мероприятия", "Клининг зала", 3500.0),
 ]
 
-# В базе услуга обязательно привязана к локации (так устроен services_db).
-# Чтобы пользователю не думать о локациях, услуги вешаются на одну
-# служебную локацию, которая создаётся автоматически.
 _default_venue_id: Optional[int] = None
 
 def get_default_venue_id() -> int:
@@ -59,7 +49,6 @@ class ServiceCreate(BaseModel):
         return check_phone(v)
 
 class ServiceUpdate(BaseModel):
-    # при изменении поля обязательны — пустой PUT не затрёт услугу
     name: str = Field(min_length=1)
     description: Optional[str] = None
     price: float = Field(ge=0)
@@ -86,7 +75,6 @@ def get_service(service_id: int):
 def create_service(service: ServiceCreate = ServiceCreate()):
     venue_id = get_default_venue_id()
 
-    # name указан — создаём именно эту услугу
     if service.name:
         service_id = services_db.write_service(
             venue_id, service.name, service.description,
@@ -97,7 +85,6 @@ def create_service(service: ServiceCreate = ServiceCreate()):
             raise HTTPException(status_code=409, detail="Услуга с таким названием уже есть")
         return services_db.get_service(service_id)
 
-    # name не указан — берём первую готовую услугу, которой ещё нет
     for name, description, price in PRESET_SERVICES:
         service_id = services_db.write_service(
             venue_id, name,
