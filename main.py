@@ -1,12 +1,12 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional
-import re
-import services_db
-
+# ==================== УСЛУГИ (модуль services) ====================
+# Работает так же, как /venues в модуле мероприятий:
+#   GET    /api/v1/services          — все услуги
+#   GET    /api/v1/services/{id}     — одна услуга
+#   POST   /api/v1/services          — создать (можно с пустым body)
+#   PUT    /api/v1/services/{id}     — изменить
+#   DELETE /api/v1/services/{id}     — удалить
 
 PHONE_RE = re.compile(r"^\+?[0-9\s\-()]{5,20}$")
-
 
 def check_phone(v: str) -> str:
     v = v.strip()
@@ -14,19 +14,43 @@ def check_phone(v: str) -> str:
         raise ValueError("Некорректный номер телефона")
     return v
 
+# Готовые услуги: если в body нет name, берётся первая, которой ещё нет
+PRESET_SERVICES = [
+    ("Кейтеринг", "Фуршет или банкет под ключ", 1500.0),
+    ("Звуковое оборудование", "Колонки, микрофоны, пульт", 8000.0),
+    ("Световое оформление", "Сценический свет и подсветка зала", 6000.0),
+    ("Фотограф", "Съёмка мероприятия, 3 часа", 10000.0),
+    ("Видеосъёмка", "Съёмка и монтаж ролика", 15000.0),
+    ("Ведущий", "Ведущий / тамада на мероприятие", 12000.0),
+    ("DJ", "Музыкальное сопровождение", 9000.0),
+    ("Декор зала", "Шары, цветы, тематическое оформление", 7000.0),
+    ("Проектор и экран", "Для презентаций и видео", 3000.0),
+    ("Охрана", "Охранник на время мероприятия", 4000.0),
+    ("Гардероб", "Гардеробщик на входе", 2000.0),
+    ("Уборка после мероприятия", "Клининг зала", 3500.0),
+]
 
-# ==================== PYDANTIC MODELS ====================
-class VenuePackage(BaseModel):
-    name: str = Field(min_length=1)
-    address: str = Field(min_length=1)
-    capacity: int = Field(gt=0)
+# В базе услуга обязательно привязана к локации (так устроен services_db).
+# Чтобы пользователю не думать о локациях, услуги вешаются на одну
+# служебную локацию, которая создаётся автоматически.
+_default_venue_id: Optional[int] = None
+
+def get_default_venue_id() -> int:
+    global _default_venue_id
+    if _default_venue_id is not None and services_db.check_venue(_default_venue_id):
+        return _default_venue_id
+    if services_db.check_venue(1):
+        _default_venue_id = 1
+    else:
+        _default_venue_id = services_db.write_venue("Общие услуги", "—", 1)
+    return _default_venue_id
 
 
-class ServicePackage(BaseModel):
-    venue_id: int
-    name: str = Field(min_length=1)
+class ServiceCreate(BaseModel):
+    # всё необязательное — можно слать пустой body
+    name: Optional[str] = Field(default=None, min_length=1)
     description: Optional[str] = None
-    price: float = Field(default=0.0, ge=0)
+    price: Optional[float] = Field(default=None, ge=0)
     contact_phone: str = services_db.DEFAULT_PHONE
 
     @field_validator("contact_phone")
@@ -34,9 +58,8 @@ class ServicePackage(BaseModel):
     def validate_phone(cls, v):
         return check_phone(v)
 
-
-class ServiceUpdatePackage(BaseModel):
-    service_id: int
+class ServiceUpdate(BaseModel):
+    # при изменении поля обязательны — пустой PUT не затрёт услугу
     name: str = Field(min_length=1)
     description: Optional[str] = None
     price: float = Field(ge=0)
@@ -48,115 +71,58 @@ class ServiceUpdatePackage(BaseModel):
         return check_phone(v)
 
 
-class ServicePhonePackage(BaseModel):
-    service_id: int
-    contact_phone: str
+@app.get("/api/v1/services", tags=["Услуги"])
+def list_services():
+    return services_db.get_services(None)
 
-    @field_validator("contact_phone")
-    @classmethod
-    def validate_phone(cls, v):
-        return check_phone(v)
-
-
-class VenuePhonePackage(BaseModel):
-    venue_id: int
-    contact_phone: str
-
-    @field_validator("contact_phone")
-    @classmethod
-    def validate_phone(cls, v):
-        return check_phone(v)
-
-
-app = FastAPI(title="Interlink-Labs: модуль «Услуги»")
-
-
-def venue_or_404(venue_id: int):
-    if not services_db.check_venue(venue_id):
-        raise HTTPException(status_code=404, detail="Локация не найдена")
-
-
-# ==================== ЛОКАЦИИ ====================
-@app.post("/api/v1/venues/create")
-def create_venue(venue: VenuePackage):
-    """Создаёт локацию, базовые услуги добавляются автоматически (п. 13)"""
-    venue_id = services_db.write_venue(venue.name, venue.address, venue.capacity)
-    return {"message": "Локация создана, базовые услуги добавлены", "venue_id": venue_id}
-
-
-@app.get("/api/v1/venues/list")
-def list_venues():
-    return services_db.get_venues()
-
-
-# ==================== УСЛУГИ: CRUD (п. 12) ====================
-@app.post("/api/v1/services/create")
-def create_service(service: ServicePackage):
-    venue_or_404(service.venue_id)
-    service_id = services_db.write_service(
-        service.venue_id, service.name, service.description, service.price, service.contact_phone
-    )
-    if service_id is None:
-        raise HTTPException(status_code=409, detail="У этой локации уже есть услуга с таким названием")
-    return {"message": "Услуга создана", "service_id": service_id}
-
-
-@app.post("/api/v1/services/get")
+@app.get("/api/v1/services/{service_id}", tags=["Услуги"])
 def get_service(service_id: int):
     service = services_db.get_service(service_id)
     if service is None:
         raise HTTPException(status_code=404, detail="Услуга не найдена")
     return service
 
+@app.post("/api/v1/services", status_code=status.HTTP_201_CREATED, tags=["Услуги"])
+def create_service(service: ServiceCreate = ServiceCreate()):
+    venue_id = get_default_venue_id()
 
-@app.get("/api/v1/services/list")
-def list_services(venue_id: Optional[int] = None):
-    """Все услуги или услуги одной локации"""
-    if venue_id is not None:
-        venue_or_404(venue_id)
-    return services_db.get_services(venue_id)
+    # name указан — создаём именно эту услугу
+    if service.name:
+        service_id = services_db.write_service(
+            venue_id, service.name, service.description,
+            service.price if service.price is not None else 0.0,
+            service.contact_phone,
+        )
+        if service_id is None:
+            raise HTTPException(status_code=409, detail="Услуга с таким названием уже есть")
+        return services_db.get_service(service_id)
 
+    # name не указан — берём первую готовую услугу, которой ещё нет
+    for name, description, price in PRESET_SERVICES:
+        service_id = services_db.write_service(
+            venue_id, name,
+            service.description if service.description is not None else description,
+            service.price if service.price is not None else price,
+            service.contact_phone,
+        )
+        if service_id is not None:
+            return services_db.get_service(service_id)
 
-@app.post("/api/v1/services/update")
-def update_service(service: ServiceUpdatePackage):
+    raise HTTPException(status_code=409, detail="Все готовые услуги уже созданы, укажи name")
+
+@app.put("/api/v1/services/{service_id}", tags=["Услуги"])
+def update_service(service_id: int, service: ServiceUpdate):
     result = services_db.update_service(
-        service.service_id, service.name, service.description, service.price, service.contact_phone
+        service_id, service.name, service.description, service.price, service.contact_phone
     )
     if result is None:
-        raise HTTPException(status_code=409, detail="У этой локации уже есть услуга с таким названием")
+        raise HTTPException(status_code=409, detail="Услуга с таким названием уже есть")
     if not result:
         raise HTTPException(status_code=404, detail="Услуга не найдена")
-    return {"message": "Услуга обновлена", "service": services_db.get_service(service.service_id)}
+    return services_db.get_service(service_id)
 
-
-@app.post("/api/v1/services/delete")
+@app.delete("/api/v1/services/{service_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Услуги"])
 def delete_service(service_id: int):
-    if services_db.delete_service(service_id):
-        return {"message": "Услуга удалена"}
-    raise HTTPException(status_code=404, detail="Услуга не найдена")
-
-
-# ==================== БАЗОВЫЕ УСЛУГИ (п. 13) ====================
-@app.post("/api/v1/services/base")
-def add_base_services(venue_id: int):
-    """Вернуть локации базовые услуги, если какие-то из них удалили"""
-    venue_or_404(venue_id)
-    added = services_db.add_base_services(venue_id)
-    return {"message": "Базовые услуги добавлены", "added": added}
-
-
-# ==================== ТЕЛЕФОН ОТВЕТСТВЕННОГО (п. 14) ====================
-@app.post("/api/v1/services/phone")
-def set_service_phone(data: ServicePhonePackage):
-    """Телефон ответственного за одну услугу"""
-    if services_db.update_service_phone(data.service_id, data.contact_phone):
-        return {"message": "Номер телефона обновлён"}
-    raise HTTPException(status_code=404, detail="Услуга не найдена")
-
-
-@app.post("/api/v1/venues/phone")
-def set_venue_phone(data: VenuePhonePackage):
-    """Привязка к локации номера ответственного лица: ставится всем услугам локации"""
-    venue_or_404(data.venue_id)
-    updated = services_db.update_venue_phone(data.venue_id, data.contact_phone)
-    return {"message": "Номер телефона привязан к локации", "updated": updated}
+    if not services_db.delete_service(service_id):
+        raise HTTPException(status_code=404, detail="Услуга не найдена")
+    return None
