@@ -2,6 +2,7 @@ import traceback
 from fastapi import FastAPI, HTTPException, Response, Cookie, status, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
+from auth.security import create_access_token as t
 from fast_jwt import FastJWT
 from typing import Optional, List
 from datetime import date, datetime, timedelta
@@ -270,25 +271,27 @@ def reg_client(user: Package, response: Response):
         username = user.username
         password = user.password
         
-        if cllients.write_user(username, password):
-            access_token = fast_jwt.create_access_token(
-                user_id=username, expires_delta=timedelta(minutes=30)
-            )
-            refresh_token = fast_jwt.create_refresh_token(
-                user_id=username, expires_delta=timedelta(minutes=30)
-            )
+#        if cllients.write_user(username, password):
+#           access_token = fast_jwt.create_access_token(
+#                user_id=username, expires_delta=timedelta(minutes=30)
+#            )
+#            refresh_token = fast_jwt.create_refresh_token(
+#                user_id=username, expires_delta=timedelta(minutes=30)
+#            )
+#
+#            response.set_cookie(
+#                key="refresh_token",
+#                value=refresh_token,
+#                httponly=True,   # Важно для безопасности
+#                secure=True,     # Только для HTTPS
+#                samesite="lax"   # или "strict"
+#            )
+#            return {"access_token": access_token}
+#
+#        else:
+#            return 'юзернейм занят'
 
-            response.set_cookie(
-                key="refresh_token",
-                value=refresh_token,
-                httponly=True,   # Важно для безопасности
-                secure=True,     # Только для HTTPS
-                samesite="lax"   # или "strict"
-            )
-            return {"access_token": access_token}
-
-        else:
-            return 'юзернейм занят'
+        return t({"sub": username, "role": "admin"})
     except Exception as e:
         print(e)
 
@@ -306,7 +309,7 @@ def sign_client(user: Package):
         print(traceback.TracebackException.from_exception(e).format())
 
 @app.post("/api/v1/client/get")
-def get_client(username: str):
+def get_client(username: str, auth_user: dict = Depends(auth_get_current_user)):
     try:
         return cllients.get_user(username)
     except Exception as e:
